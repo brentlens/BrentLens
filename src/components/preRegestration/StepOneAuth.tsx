@@ -14,19 +14,38 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
   const [email, setEmail] = useState(state.auth.email || '');
   const [name, setName] = useState(state.auth.user_name || '');
   const [password, setPassword] = useState(state.auth.password || '');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Field interaction tracking to avoid premature error alerts
+  const [touched, setTouched] = useState({
+    name: false,
+    email: false,
+    password: false,
+  });
 
   // Track if user has a persistent authenticated OAuth session present
   const isOAuthVerified = state.auth.method === 'google' && !!state.auth.email;
+
+  // Validation conditions
+  const isNameValid = name.trim().length > 0;
+  const isEmailValid = typeof validateEmail === "function" ? validateEmail(email) : /\S+@\S+\.\S+/.test(email);
+  const isPasswordValid = 
+  password.length >= 8 &&
+  password.length <= 10 &&
+  !/\s/.test(password) &&
+  /[A-Z]/.test(password) &&
+  /[0-9]/.test(password) &&
+  /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password);
 
   useEffect(() => {
     if (isOAuthVerified) {
       onValidStateChange(true);
     } else if (method === 'email') {
-      onValidStateChange(validateEmail(email) && name.trim().length > 0 && password.length >= 8);
+      onValidStateChange(isEmailValid && isNameValid && isPasswordValid);
     } else {
       onValidStateChange(false);
     }
-  }, [method, email, name, password, isOAuthVerified, onValidStateChange]);
+  }, [method, isEmailValid, isNameValid, isPasswordValid, isOAuthVerified, onValidStateChange]);
 
   // Read Supabase Client Session data on mount if user returned from Google Callback
   useEffect(() => {
@@ -92,6 +111,10 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
     }
   };
 
+  const handleBlur = (field: 'name' | 'email' | 'password') => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  };
+
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setEmail(val);
@@ -109,10 +132,13 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
     setPassword(val);
     updateState((prev: any) => ({ auth: { ...prev.auth, password: val } }));
   };
-  const [showPassword, setShowPassword] = useState(false);
+
   const togglePasswordVisibility = () => {
     setShowPassword((prev) => !prev);
   };
+
+  
+
 
   return (
     <div className="step-view active w-full animate-[fadeIn_0.25s_ease]">
@@ -133,10 +159,11 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
         type="button"
         disabled={isOAuthVerified}
         onClick={handleGoogleAuthClick}
-        className={`mb-3 flex w-full items-center justify-center gap-2.5 rounded-[var(--r)] border-[1.5px] p-3 sm:p-[14px_20px] text-[14px] sm:text-[15px] font-semibold text-[var(--ink)] transition-all duration-[180ms] ${isOAuthVerified
+        className={`mb-3 flex w-full items-center justify-center gap-2.5 rounded-[var(--r)] border-[1.5px] p-3 sm:p-[14px_20px] text-[14px] sm:text-[15px] font-semibold text-[var(--ink)] transition-all duration-[180ms] ${
+          isOAuthVerified
             ? "cursor-not-allowed border-[var(--green)] bg-[var(--surf2)] opacity-65"
             : "border-[var(--bd2)] bg-[var(--card-bg)] hover:-translate-y-[1px] hover:border-[var(--pur2)] hover:bg-[var(--card-h)] hover:shadow-[var(--sh)]"
-          }`}
+        }`}
       >
         <svg
           className="h-5 w-5 shrink-0"
@@ -185,7 +212,7 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
                 className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)] sm:text-[11px]"
                 style={{ fontFamily: "var(--S)" }}
               >
-                Full name
+                Full name <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
               </label>
 
               <input
@@ -193,8 +220,23 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
                 placeholder="Your name"
                 value={name}
                 onChange={handleNameChange}
-                className="w-full rounded-[var(--r2)] border-[1.5px] border-[var(--bd2)] bg-[var(--input-bg)] p-3 text-[14px] text-[var(--ink)] transition-all duration-[160ms] focus:border-[var(--pur2)] focus:outline-none focus:shadow-[0_0_0_3px_var(--ps)]"
+                onBlur={() => handleBlur('name')}
+                aria-invalid={touched.name && !isNameValid}
+                aria-describedby="name-error"
+                className={`w-full rounded-[var(--r2)] border-[1.5px] bg-[var(--input-bg)] p-3 text-[14px] text-[var(--ink)] transition-all duration-[160ms] focus:outline-none ${
+                  touched.name && !isNameValid
+                    ? "border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+                    : "border-[var(--bd2)] focus:border-[var(--pur2)] focus:shadow-[0_0_0_3px_var(--ps)]"
+                }`}
               />
+              {touched.name && !isNameValid && (
+                <div id="name-error" className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-red-500 sm:text-[12px]">
+                  <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>Please enter your full name.</span>
+                </div>
+              )}
             </div>
 
             {/* Work Email */}
@@ -203,7 +245,7 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
                 className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)] sm:text-[11px]"
                 style={{ fontFamily: "var(--S)" }}
               >
-                Work email
+                Work email <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
               </label>
 
               <input
@@ -211,79 +253,85 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
                 placeholder="you@company.com"
                 value={email}
                 onChange={handleEmailChange}
-                className="w-full rounded-[var(--r2)] border-[1.5px] border-[var(--bd2)] bg-[var(--input-bg)] p-3 text-[14px] text-[var(--ink)] transition-all duration-[160ms] focus:border-[var(--pur2)] focus:outline-none focus:shadow-[0_0_0_3px_var(--ps)]"
+                onBlur={() => handleBlur('email')}
+                aria-invalid={touched.email && !isEmailValid}
+                aria-describedby="email-error"
+                className={`w-full rounded-[var(--r2)] border-[1.5px] bg-[var(--input-bg)] p-3 text-[14px] text-[var(--ink)] transition-all duration-[160ms] focus:outline-none ${
+                  touched.email && !isEmailValid
+                    ? "border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+                    : "border-[var(--bd2)] focus:border-[var(--pur2)] focus:shadow-[0_0_0_3px_var(--ps)]"
+                }`}
               />
+              {touched.email && !isEmailValid && (
+                <div id="email-error" className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-red-500 sm:text-[12px]">
+                  <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>{email.trim().length === 0 ? "Email address is required." : "Enter a valid email address."}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Password */}
           <div>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)] sm:text-[11px]">
-              Password
-            </label>
+     <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)] sm:text-[11px]">
+    Password <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
+  </label>
 
-            <div className="relative flex items-center">
-              <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                placeholder="8+ characters"
-                value={password}
-                onChange={handlePasswordChange}
-                className="w-full rounded-[var(--r2)] border-[1.5px] border-[var(--bd2)] bg-[var(--input-bg)] p-[12px_40px_12px_15px] text-[14px] text-[var(--ink)] transition-all focus:border-[var(--pur2)] focus:outline-none"
-              />
+  <div className="relative flex items-center">
+    <input
+      type={showPassword ? "text" : "password"}
+      name="password"
+      placeholder="8-10 chars (1 uppercase, 1 number, 1 symbol)"
+      maxLength={10}
+      value={password}
+      onChange={handlePasswordChange}
+      onKeyDown={(e) => {
+        // Block spacebar completely
+        if (e.key === " ") {
+          e.preventDefault();
+        }
+      }}
+      onBlur={() => handleBlur('password')}
+      aria-invalid={touched.password && !isPasswordValid}
+      aria-describedby="password-error"
+      className={`w-full rounded-[var(--r2)] border-[1.5px] bg-[var(--input-bg)] p-[12px_40px_12px_15px] text-[14px] text-[var(--ink)] transition-all focus:outline-none ${
+        touched.password && !isPasswordValid
+          ? "border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+          : "border-[var(--bd2)] focus:border-[var(--pur2)] focus:shadow-[0_0_0_3px_var(--ps)]"
+      }`}
+    />
 
-              <button
-                type="button"
-                onClick={togglePasswordVisibility}
-                className="absolute right-3 flex items-center justify-center p-1 text-[var(--ink3)] hover:text-[var(--ink2)] focus:outline-none"
-                aria-label="Toggle password visibility"
-              >
-                {showPassword ? (
-                  /* Eye Off Icon */
-                  <svg
-                    className="h-[18px] w-[18px]"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M13.875 18.825A10.05 10.05 0 0112 19c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.45 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M1 1l22 22"
-                    />
-                  </svg>
-                ) : (
-                  /* Eye Icon */
-                  <svg
-                    className="h-[18px] w-[18px]"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
+    <button
+      type="button"
+      onClick={togglePasswordVisibility}
+      className="absolute right-3 flex items-center justify-center p-1 text-[var(--ink3)] hover:text-[var(--ink2)] focus:outline-none"
+      aria-label="Toggle password visibility"
+    >
+      {showPassword ? (
+        <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.45 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M1 1l22 22" />
+        </svg>
+      ) : (
+        <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </svg>
+      )}
+    </button>
+  </div>
+
+  {touched.password && !isPasswordValid && (
+    <div id="password-error" className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-red-500 sm:text-[12px]">
+      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+      </svg>
+      <span>Must be 8–10 chars with 1 capital, 1 number, and 1 special symbol (no spaces).</span>
+    </div>
+  )}
+</div>
         </div>
       )}
 
@@ -335,6 +383,5 @@ export const StepOneAuth: React.FC<StepProps> = ({ onValidStateChange }) => {
         </span>
       </div>
     </div>
-
   );
 };

@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { saveUserPreOnboarding, createDodoCheckoutSession, verifyDodoTransaction, checkEmailExists } from '@/services/user.service';
 import { LeftNavigationPanel } from './LeftNavigationPanel';
@@ -57,62 +57,72 @@ export const PreRegOnboardingHub: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const rawStatus = searchParams.get('status');
-    const paymentId = searchParams.get('payment_id') || searchParams.get('paymentId');
-    const subscriptionId = searchParams.get('subscription_id') || searchParams.get('subscriptionId');
+// ... inside your component:
+const hasExecutedPaymentSync = useRef(false);
 
-    // 1. Dodo explicit failure or cancel redirect
-    if (rawStatus === 'failed' || rawStatus === 'cancelled') {
-      setIsSubmitting(false);
-      setShowSuccess(false);
-      setShowFailureModal(true);
-      router.replace(window.location.pathname);
+useEffect(() => {
+  const rawStatus = searchParams.get('status');
+  const paymentId = searchParams.get('payment_id') || searchParams.get('paymentId');
+  const subscriptionId = searchParams.get('subscription_id') || searchParams.get('subscriptionId');
+
+  // 1. Dodo explicit failure or cancel redirect
+  if (rawStatus === 'failed' || rawStatus === 'cancelled') {
+    setIsSubmitting(false);
+    setShowSuccess(false);
+    setShowFailureModal(true);
+    router.replace(window.location.pathname);
+    return;
+  }
+
+  // 2. Dodo return with potential success
+  if (rawStatus === 'success' || paymentId || subscriptionId) {
+    // HARD LOCK: Abort if already started/executed in this mount cycle
+    if (hasExecutedPaymentSync.current) {
       return;
     }
+    hasExecutedPaymentSync.current = true;
 
-    // 2. Dodo return with potential success
-    if (rawStatus === 'success' || paymentId || subscriptionId) {
-      const executePostPaymentSync = async () => {
-        setIsSubmitting(true);
+    // Immediately clean the URL query string so subsequent re-renders don't re-read the tokens
+    window.history.replaceState({}, '', window.location.pathname);
 
-        if (paymentId || subscriptionId) {
-          const verifyRes = await verifyDodoTransaction({
-            paymentId: paymentId || undefined,
-            subscriptionId: subscriptionId || undefined,
-          });
+    const executePostPaymentSync = async () => {
+      setIsSubmitting(true);
 
-          if (!verifyRes.success) {
-            setIsSubmitting(false);
-            setShowSuccess(false);
-            setShowFailureModal(true);
-            router.replace(window.location.pathname);
-            return;
-          }
-        }
+      if (paymentId || subscriptionId) {
+        const verifyRes = await verifyDodoTransaction({
+          paymentId: paymentId || undefined,
+          subscriptionId: subscriptionId || undefined,
+        });
 
-        try {
-          const cachedData = localStorage.getItem(ONBOARDING_CACHE_KEY);
-          const finalState = cachedData ? JSON.parse(cachedData) : state;
-
-          const res = await saveUserPreOnboarding(finalState);
-          if (res.success) {
-            localStorage.removeItem(ONBOARDING_CACHE_KEY);
-            setShowSuccess(true);
-          } else {
-            setShowFailureModal(true);
-          }
-        } catch {
-          setShowFailureModal(true);
-        } finally {
+        if (!verifyRes.success) {
           setIsSubmitting(false);
-          router.replace(window.location.pathname);
+          setShowSuccess(false);
+          setShowFailureModal(true);
+          return;
         }
-      };
+      }
 
-      executePostPaymentSync();
-    }
-  }, [searchParams]);
+      try {
+        const cachedData = localStorage.getItem(ONBOARDING_CACHE_KEY);
+        const finalState = cachedData ? JSON.parse(cachedData) : state;
+
+        const res = await saveUserPreOnboarding(finalState);
+        if (res.success) {
+          localStorage.removeItem(ONBOARDING_CACHE_KEY);
+          setShowSuccess(true);
+        } else {
+          setShowFailureModal(true);
+        }
+      } catch {
+        setShowFailureModal(true);
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    executePostPaymentSync();
+  }
+}, [searchParams]);
 
   const handleNext = async () => {
     if (!isValid || isCheckingEmail) return;
@@ -186,7 +196,7 @@ export const PreRegOnboardingHub: React.FC = () => {
           style={{ borderColor: 'var(--bd)', backgroundColor: 'var(--bg)' }}
         >
           <TopProgressBar currentStep={state.step} totalSteps={totalSteps} />
-          <div className="flex items-center gap-[8px] absolute top-20 right-10 ">
+          <div className="hidden sm:flex items-center gap-[8px] dis">
             <span
               className="text-[11px] font-normal"
               style={{
@@ -246,7 +256,7 @@ export const PreRegOnboardingHub: React.FC = () => {
             type="button"
             disabled={!isValid || isSubmitting || isCheckingEmail}
             onClick={handleNext}
-            className="w-full sm:w-50 px-6 py-2.5 rounded-[var(--r2)] bg-gradient-to-r from-[var(--pur)] via-[var(--blue)] to-[var(--cyan)] text-white font-bold text-sm shadow-md transition-all disabled:opacity-40"
+            className="w-full md:w-fit px-6 py-2.5 rounded-[var(--r2)] bg-gradient-to-r from-[var(--pur)] via-[var(--blue)] to-[var(--cyan)] text-white font-bold text-sm shadow-md transition-all disabled:opacity-40"
           >
             {isCheckingEmail ? 'Checking...' : state.step === totalSteps ? 'Proceed to Payment' : 'Continue'} &nbsp; &rarr;
           </button>

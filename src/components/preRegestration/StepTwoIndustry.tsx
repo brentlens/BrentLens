@@ -218,7 +218,7 @@ const { state, updateState }: any = usePreRegistration();
         {/* Country Select */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Your country
+            Your country <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
           </label>
           <div className="relative">
             <select
@@ -242,7 +242,7 @@ const { state, updateState }: any = usePreRegistration();
         {/* Spend Select */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Monthly fuel spend
+            Monthly fuel spend <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
           </label>
           <div className="relative">
            <select
