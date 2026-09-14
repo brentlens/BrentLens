@@ -1,26 +1,44 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useOnboarding } from '../../contexts/OnboardingContext';
-import { ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { usePreRegistration } from '@/contexts/PreRegOnboardingContext';
 import { useRouter } from 'next/navigation';
-
+interface SuccessData {
+  name: string;
+  email: string;
+  industry: string;
+  plan: string;
+  planAmount: string | number;
+}
 export const SuccessOverlay: React.FC = () => {
   const { state, resetContext } = usePreRegistration();
+
   const router = useRouter();
 
+  const [successData, setSuccessData] =
+    useState<SuccessData | null>(null);
+  useEffect(() => {
+    const snapshot: SuccessData = {
+      name: state.auth.user_name || 'Not set',
+      email: state.auth.email || 'Not set',
+      industry: state.industryLabel || 'Not set',
+      plan: state.planLabel || '-',
+      planAmount: state.planAmount || '-',
+    };
+    setSuccessData(snapshot);
+	resetContext();
+  }, []);
+
   const handleFinish = () => {
-    router.push("/home");
+    router.push('/home');
   };
 
-    useEffect(() => {
-	  resetContext();
-	}, []);
-
-
-
+  if (!successData) {
+    return null;
+  }
   return (
     <div className="fixed inset-0 bg-[var(--bg)] z-[600] flex flex-col items-center justify-center p-6 overflow-y-auto scroll-clean transition-colors duration-300 animate-[fadeIn_0.4s_ease-out]">
       <div className="w-full max-w-xl text-center space-y-6 py-8 select-none flex flex-col items-center">
@@ -52,25 +70,25 @@ export const SuccessOverlay: React.FC = () => {
             <div className="flex items-center justify-between border-b border-transparent pb-[2px]">
               <span className="text-[var(--ink3)] font-medium">Name</span>
               <span className="text-[var(--ink)] font-bold text-right truncate max-w-[280px]">
-                {state.auth.user_name || 'Not set'}
+                {successData.name || 'Not set'}
               </span>
             </div>
             <div className="flex items-center justify-between border-b border-transparent pb-[2px]">
               <span className="text-[var(--ink3)] font-medium">Email</span>
               <span className="text-[var(--ink)] font-bold text-right truncate max-w-[280px]">
-                {state.auth.email || 'Not set'}
+                {successData.email || 'Not set'}
               </span>
             </div>
             <div className="flex items-center justify-between border-b border-transparent pb-[2px]">
               <span className="text-[var(--ink3)] font-medium">Industry</span>
               <span className="text-[var(--ink)] font-bold text-right truncate max-w-[280px] uppercase">
-                {state.industryLabel || 'Not set'}
+                {successData.industry || 'Not set'}
               </span>
             </div>
             <div className="flex items-center justify-between pb-[2px]">
               <span className="text-[var(--ink3)] font-medium">Plan</span>
               <span className="text-[var(--ink)] font-bold text-right truncate max-w-[280px]">
-                {state.planLabel || '-'} — ${state.planAmount || '-'}/mo (founding rate)
+                {successData.plan || '-'} — ${successData.planAmount || '-'}/mo (founding rate)
               </span>
             </div>
             <div className="flex items-center justify-between pb-[2px]">

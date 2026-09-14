@@ -75,3 +75,10 @@ export interface IUserSetting{
   spendBucket: number,
   brent30Days: number
 }
+
+
+export interface WaitlistFormData {
+  fullName: string;
+  email: string;
+  password?: string;
+}

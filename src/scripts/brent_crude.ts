@@ -38,6 +38,27 @@ const supabase = createClient(
 // }
 
 
+export async function runEmail() {
+  try {
+
+
+    const response = await fetch('http://localhost:3000/api/cron/email', {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer 8e92bf3f7281d886a9b5ebacf1754d1883effa3b37a85f35132cb25d9a69f2de`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    console.log("Email sent successfully");
+  } catch (error: any) {
+    console.error("Error:", error.message);
+  }
+}
 export async function fetchBrentData() {
   try {
 
@@ -83,6 +104,5 @@ export async function fetchBrentData() {
     console.error("Error:", error.message);
   }
 }
-
 
 // fetchBrentData();

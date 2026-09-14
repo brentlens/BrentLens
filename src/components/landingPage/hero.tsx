@@ -51,8 +51,8 @@ export default function Hero({
   };
 
   return (
-    <section className="min-h-screen flex items-center pt-[70px] bg-hero-bg transition-colors duration-300">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-[60px] items-center w-full max-w-[1200px] mx-auto px-5 md:px-10 py-20">
+    <section className="md:min-h-screen flex items-center pt-[70px] bg-hero-bg transition-colors duration-300">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-[60px] items-center w-full max-w-[1200px] mx-auto px-5 md:px-10 md:py-20">
         <div>
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-pur/12 border border-pur/30 font-sora text-[11px] font-bold tracking-[0.06em] uppercase text-pur2 mb-6">
             Fuel Cost Intelligence &nbsp;•&nbsp; Powered by Brent Crude
@@ -64,39 +64,36 @@ export default function Hero({
           <p className="text-[17px] text-ink3 leading-[1.75] mb-9 max-w-[520px]">
             BrentLens converts crude oil movements into personalized cost impact intelligence for logistics, manufacturing, construction, aviation, maritime, and agribusiness teams.
           </p>
-          <div className="flex gap-3 flex-wrap mb-9">
-			<button
-				onClick={() => {
-					router.push("/onboarding");
-				}}
-				className="px-7 py-3.5 rounded-lg bg-gradient-to-br from-pur to-cyan text-white text-[15px] font-bold shadow-[0_4px_20px_rgba(124,58,237,0.35)] transition-all duration-180 inline-flex items-center gap-2 hover:translate-y-[-2px] hover:shadow-[0_8px_32px_rgba(124,58,237,0.5)]"
-				>
-				{isPreLanding ? "Reserve Founding Rates" : "Start 14-day free trial"}
-			</button>
-            {/* <button onClick={() => {router.push("/onboarding");}} className="px-7 py-3.5 rounded-lg bg-gradient-to-br from-pur to-cyan text-white text-[15px] font-bold shadow-[0_4px_20px_rgba(124,58,237,0.35)] transition-all duration-180 inline-flex items-center gap-2 hover:translate-y-[-2px] hover:shadow-[0_8px_32px_rgba(124,58,237,0.5)]">
-              Start 14-day free trial
-            </button> */}
-			<button
-				onClick={() => {
-					if (isPreLanding) {
-					router.push("/waitlist");
-					} else {
-					scrollToSection("how");
-					}
-				}}
-				className="px-7 py-3.5 rounded-lg border-[1.5px] border-bd2 bg-surf text-ink text-[15px] font-semibold transition-all duration-180 inline-flex items-center gap-2 hover:border-pur2 hover:text-pur2 hover:bg-pur/12"
-				>
-				{isPreLanding ? "Join Waitlist Free" : "See how it works"}
-			</button>
-            {/* <button onClick={() => scrollToSection("how")} className="px-7 py-3.5 rounded-lg border-[1.5px] border-bd2 bg-surf text-ink text-[15px] font-semibold transition-all duration-180 inline-flex items-center gap-2 hover:border-pur2 hover:text-pur2 hover:bg-pur/12">
-              See how it works
-            </button> */}
+          <div className="mb-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button
+              onClick={() => {
+                router.push("/onboarding");
+              }}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-pur to-cyan px-7 py-3.5 text-[15px] font-bold text-white shadow-[0_4px_20px_rgba(124,58,237,0.35)] transition-all duration-180 hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(124,58,237,0.5)] sm:w-auto"
+            >
+              {isPreLanding ? "Reserve Founding Rates" : "Start 14-day free trial"}
+            </button>
+
+            <button
+              onClick={() => {
+                if (isPreLanding) {
+                  router.push("/waitlist");
+                } else {
+                  scrollToSection("how");
+                }
+              }}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-bd2 bg-surf px-7 py-3.5 text-[15px] font-semibold text-ink transition-all duration-180 hover:border-pur2 hover:bg-pur/12 hover:text-pur2 sm:w-auto"
+            >
+              {isPreLanding ? "Join Waitlist Free" : "See how it works"}
+            </button>
           </div>
+
+
           <div className="flex items-center gap-3.5 text-[12px] text-ink3 flex-wrap">
             <div className="flex items-center gap-1.5">
               <div className="w-3.5 h-3.5 rounded-full bg-green/12 border border-green/25 flex items-center justify-center flex-shrink-0">
-				<FontAwesomeIcon icon={faCheck} className="text-[9px]" />
-				</div>
+                <FontAwesomeIcon icon={faCheck} className="text-[9px]" />
+              </div>
               No credit card required
             </div>
             <div className="w-[3px] h-[3px] rounded-full bg-bd2" />
@@ -107,12 +104,12 @@ export default function Hero({
               14-day full Pro access
             </div>
             <div className="w-[3px] h-[3px] rounded-full bg-bd2" />
-			
+
             <div className="flex items-center gap-1.5">
               <div className="w-3.5 h-3.5 rounded-full bg-green/12 border border-green/25 flex items-center justify-center flex-shrink-0">
                 <FontAwesomeIcon icon={faCheck} className="text-[9px]" />
               </div>
-              {isPreLanding? "Rate Locked Forever": "Cancel any time"}
+              {isPreLanding ? "Rate Locked Forever" : "Cancel any time"}
             </div>
           </div>
         </div>

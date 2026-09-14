@@ -1,10 +1,10 @@
 import cron from "node-cron";
-import { fetchBrentData } from "./brent_crude";
+import { fetchBrentData, runEmail } from "./brent_crude";
 
 // minute, hour, day, month, day of week
 cron.schedule("* * * * *", async () => {
   console.log("Running every minute...");
-  fetchBrentData()
+  runEmail()
 });
 
 console.log("Cron started");

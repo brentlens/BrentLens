@@ -183,7 +183,7 @@ const { state, updateState }: any = usePreRegistration();
         Three questions. These three inputs are all BrentLens needs to calculate your personalised cost number.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
+      <div className="grid grid-cols-2 gap-[14px]">
         {options.map((o) => {
           const isSelected = state.industry === o.id;
           return (
