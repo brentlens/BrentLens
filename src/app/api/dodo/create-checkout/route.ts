@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
     // 2. Lock full configuration in Dodo's metadata (Tamper-proof by client)
     const session = await dodo.checkoutSessions.create({
