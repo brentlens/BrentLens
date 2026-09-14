@@ -15,7 +15,7 @@ export default function Footer() {
           />
         </div>
         <div className="foot-note text-[12px] text-ink3">
-          © {new Date().getFullYear()} BrentLens. All rights reserved.
+          © 2026 BrentLens. All rights reserved.
         </div>
         <div className="foot-links flex gap-[22px]">
           <a className="text-[12px] text-ink3 transition-colors duration-140 hover:text-pur2" href="#privacy">Privacy Policy</a>
