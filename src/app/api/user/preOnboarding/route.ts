@@ -1,14 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse, after } from 'next/server';
 import { EmailService } from '@/lib/email/email.service';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-// Service role client bypasses all auth/session/cookie checks completely
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   try {
@@ -34,10 +29,9 @@ export async function POST(request: Request) {
           name: name || '',
           pass: pass,
           preference: preference,
-          pre_register_user: true, // Matches your DB schema column name
+          pre_register_user: true,
           google_linked: Boolean(google_linked),
           role: resolvedRole,
-        //   updated_at: new Date().toISOString(),
         },
         { onConflict: 'email' }
       )
@@ -52,39 +46,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Update waitlist status if user exists
-    const { data: existingWaitlistUser, error: findError } = await supabaseAdmin
-      .from('brent_waitlistUsers')
-      .select('id')
-      .eq('user_email', sanitizedEmail)
-      .maybeSingle();
+    // 2. Non-blocking Background Tasks: Status sync & Immediate Welcome Email
+    after(async () => {
+      try {
+        // Sync waitlist table if user existed there
+        const { data: existingWaitlistUser } = await supabaseAdmin
+          .from('brent_waitlistUsers')
+          .select('id')
+          .eq('user_email', sanitizedEmail)
+          .maybeSingle();
 
-    if (findError) {
-      console.error('Error checking waitlist user:', findError);
-    } else if (existingWaitlistUser) {
-      const { error: waitingListdbError } = await supabaseAdmin
-        .from('brent_waitlistUsers')
-        .update({
-          isRegistered: true,
-          status: 'migrated',
-        })
-        .eq('id', existingWaitlistUser.id);
+        if (existingWaitlistUser) {
+          await supabaseAdmin
+            .from('brent_waitlistUsers')
+            .update({ isRegistered: true, status: 'migrated' })
+            .eq('id', existingWaitlistUser.id);
+        }
 
-      if (waitingListdbError) {
-        console.error('Error updating waitlist user status:', waitingListdbError);
+        // Send Email 1 & schedule sequence for cron
+        await EmailService.handleSubscribedUserOnboarding({
+          userId: userProfile.id,
+          email: userProfile.email,
+          name: userProfile.name,
+        });
+      } catch (err) {
+        console.error('[SUBSCRIBER_BACKGROUND_PROCESSING_ERROR]', err);
       }
-    }
-
-    // 3. Trigger immediate code-based welcome email & enroll into cron sequence
-    // Non-blocking invocation ensures HTTP 200 responds without waiting for SMTP handshake
-    if (!dbError && userProfile) {
-		// Terminates waitlist track, triggers Email 1 from DB, and sets Email 2 schedule
-		EmailService.handleSubscribedUserOnboarding({
-			userId: userProfile.id,
-			email: userProfile.email,
-			name: userProfile.name,
-		}).catch((err) => console.error("[SUBSCRIBER_EMAIL_ERROR]", err));
-	}
+    });
 
     return NextResponse.json(
       {

@@ -188,52 +188,66 @@ export class EmailService {
     const normalizedEmail = email.trim().toLowerCase();
     const firstName = name?.trim() ? name.trim().split(" ")[0] : "there";
 
-    // 1. Opt-in record
-    await supabaseAdmin
-      .from("email_preferences")
-      .upsert(
-        { email: normalizedEmail, marketing_emails: true, updated_at: new Date().toISOString() },
-        { onConflict: "email" }
-      );
+    // BATCH 1: Run non-dependent reads & pre-writes in parallel
+    const [campaignRes, waitlistRecordRes, memberCountRes] = await Promise.all([
+      // A. Fetch campaign
+      supabaseAdmin
+        .from("email_campaigns")
+        .select("id")
+        .eq("slug", "pre-reg-subscribed")
+        .eq("status", "active")
+        .maybeSingle(),
 
-    // 2. Terminate any active waitlist campaigns for this user
-    const { data: waitlistRecord } = await supabaseAdmin
-      .from("brent_waitlistUsers")
-      .select("id")
-      .ilike("user_email", normalizedEmail)
-      .maybeSingle();
-
-    if (waitlistRecord) {
-      await supabaseAdmin
-        .from("user_email_campaigns")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", waitlistRecord.id)
-        .eq("audience_type", "waitlist");
-
-      await supabaseAdmin
+      // B. Check if previously on waitlist
+      supabaseAdmin
         .from("brent_waitlistUsers")
-        .update({ isRegistered: true, status: "migrated" })
-        .eq("id", waitlistRecord.id);
-    }
+        .select("id")
+        .ilike("user_email", normalizedEmail)
+        .maybeSingle(),
 
-    // 3. Resolve Campaign
-    const { data: campaign } = await supabaseAdmin
-      .from("email_campaigns")
-      .select("id")
-      .eq("slug", "pre-reg-subscribed")
-      .eq("status", "active")
-      .single();
+      // C. Count total subscribed users for member number
+      supabaseAdmin
+        .from("users_profile")
+        .select("id", { count: "exact", head: true }),
 
+      // D. Fire & forget preference creation
+      supabaseAdmin
+        .from("email_preferences")
+        .upsert(
+          { email: normalizedEmail, marketing_emails: true, updated_at: new Date().toISOString() },
+          { onConflict: "email" }
+        ),
+    ]);
+
+    const campaign = campaignRes.data;
     if (!campaign) {
       console.error('[EMAIL_ERROR] Campaign "pre-reg-subscribed" not found or inactive.');
       return;
     }
 
-    // 4. Fetch Email 1 & Email 2 from DB
+    const memberNumber = memberCountRes.count || 1;
+
+    // Clean up waitlist campaigns in parallel if migrating
+    if (waitlistRecordRes.data?.id) {
+      const waitlistId = waitlistRecordRes.data.id;
+      Promise.all([
+        supabaseAdmin
+          .from("user_email_campaigns")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", waitlistId)
+          .eq("audience_type", "waitlist"),
+        supabaseAdmin
+          .from("brent_waitlistUsers")
+          .update({ isRegistered: true, status: "migrated" })
+          .eq("id", waitlistId),
+      ]).catch((err) => console.error("[WAITLIST_CLEANUP_ERROR]", err));
+    }
+
+    // BATCH 2: Fetch sequence templates
     const { data: templates } = await supabaseAdmin
       .from("email_templates")
       .select("*")
@@ -249,13 +263,7 @@ export class EmailService {
       return;
     }
 
-    // Calculate founding member number
-    const { count } = await supabaseAdmin
-      .from("users_profile")
-      .select("id", { count: "exact", head: true });
-    const memberNumber = count || 1;
-
-    // 5. Render and send Email 1 immediately
+    // BATCH 3: Render and Send Email 1
     const rendered = EmailTemplateEngine.renderTemplate({
       rawHtml: email1.html_content,
       rawText: email1.text_content,
@@ -278,45 +286,45 @@ export class EmailService {
       text: rendered.text,
     });
 
-    // 6. Log Email 1
-    await supabaseAdmin.from("email_delivery_logs").insert({
-      user_id: userId,
-      audience_type: "subscribed",
-      campaign_id: campaign.id,
-      template_id: email1.id,
-      recipient_email: normalizedEmail,
-      subject: rendered.subject,
-      status: sendRes.success ? "sent" : "failed",
-      provider: this.provider.name,
-      message_id: sendRes.messageId || null,
-      error_message: sendRes.error || null,
-      sent_at: sendRes.success ? new Date().toISOString() : null,
-      scheduled_at: new Date().toISOString(),
-    });
-
-    // 7. Schedule Email 2 in user_email_campaigns
+    // BATCH 4: Parallelize Delivery Log and Next Send Schedule
     const nextSendDate = email2
       ? EmailScheduler.calculateNextSendDate(email2.delay_value, email2.delay_unit)
       : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
 
-    await supabaseAdmin.from("user_email_campaigns").upsert(
-      {
+    await Promise.all([
+      supabaseAdmin.from("email_delivery_logs").insert({
         user_id: userId,
         audience_type: "subscribed",
         campaign_id: campaign.id,
-        current_template_id: email1.id,
-        status: "active",
-        started_at: new Date().toISOString(),
-        last_sent_at: new Date().toISOString(),
-        next_send_at: nextSendDate.toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,campaign_id" }
-    );
+        template_id: email1.id,
+        recipient_email: normalizedEmail,
+        subject: rendered.subject,
+        status: sendRes.success ? "sent" : "failed",
+        provider: this.provider.name,
+        message_id: sendRes.messageId || null,
+        error_message: sendRes.error || null,
+        sent_at: sendRes.success ? new Date().toISOString() : null,
+        scheduled_at: new Date().toISOString(),
+      }),
+      supabaseAdmin.from("user_email_campaigns").upsert(
+        {
+          user_id: userId,
+          audience_type: "subscribed",
+          campaign_id: campaign.id,
+          current_template_id: email1.id,
+          status: "active",
+          started_at: new Date().toISOString(),
+          last_sent_at: new Date().toISOString(),
+          next_send_at: nextSendDate.toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,campaign_id" }
+      ),
+    ]);
   }
 
   // ==========================================================================
-  // 2. FREE WAITLIST USER ONBOARDING
+  // 2. OPTIMIZED FREE WAITLIST USER ONBOARDING
   // ==========================================================================
   public static async handleWaitlistUserOnboarding(params: {
     waitlistUserId: string;
@@ -326,37 +334,26 @@ export class EmailService {
     const { waitlistUserId, email, name } = params;
     const normalizedEmail = email.trim().toLowerCase();
     const firstName = name?.trim() ? name.trim().split(" ")[0] : "there";
-
-    // 1. Opt-in record
-    await supabaseAdmin
-      .from("email_preferences")
-      .upsert(
-        { email: normalizedEmail, marketing_emails: true, updated_at: new Date().toISOString() },
-        { onConflict: "email" }
-      );
-
-    // 2. Resolve Waitlist Campaign
     const campaignId = "9ec594a4-b1c0-4416-b262-76d45f39e517";
-    const { data: campaign } = await supabaseAdmin
-      .from("email_campaigns")
-      .select("id")
-      .eq("id", campaignId)
-      .eq("status", "active")
-      .single();
 
-    if (!campaign) {
-      console.error(`[EMAIL_ERROR] Waitlist campaign ${campaignId} not active.`);
-      return;
-    }
+    // BATCH 1: Fetch campaign and templates + Upsert preferences in parallel
+    const [templatesRes] = await Promise.all([
+      supabaseAdmin
+        .from("email_templates")
+        .select("*")
+        .eq("campaign_id", campaignId)
+        .in("sequence_order", [1, 2])
+        .order("sequence_order", { ascending: true }),
 
-    // 3. Fetch Email 1 & Email 2 from DB
-    const { data: templates } = await supabaseAdmin
-      .from("email_templates")
-      .select("*")
-      .eq("campaign_id", campaign.id)
-      .in("sequence_order", [1, 2])
-      .order("sequence_order", { ascending: true });
+      supabaseAdmin
+        .from("email_preferences")
+        .upsert(
+          { email: normalizedEmail, marketing_emails: true, updated_at: new Date().toISOString() },
+          { onConflict: "email" }
+        ),
+    ]);
 
+    const templates = templatesRes.data;
     const email1 = templates?.find((t) => t.sequence_order === 1);
     const email2 = templates?.find((t) => t.sequence_order === 2);
 
@@ -365,7 +362,7 @@ export class EmailService {
       return;
     }
 
-    // 4. Render and send Email 1 immediately
+    // BATCH 2: Render & Send Email 1
     const rendered = EmailTemplateEngine.renderTemplate({
       rawHtml: email1.html_content,
       rawText: email1.text_content,
@@ -387,40 +384,40 @@ export class EmailService {
       text: rendered.text,
     });
 
-    // 5. Log Email 1
-    await supabaseAdmin.from("email_delivery_logs").insert({
-      user_id: waitlistUserId,
-      audience_type: "waitlist",
-      campaign_id: campaign.id,
-      template_id: email1.id,
-      recipient_email: normalizedEmail,
-      subject: rendered.subject,
-      status: sendRes.success ? "sent" : "failed",
-      provider: this.provider.name,
-      message_id: sendRes.messageId || null,
-      error_message: sendRes.error || null,
-      sent_at: sendRes.success ? new Date().toISOString() : null,
-      scheduled_at: new Date().toISOString(),
-    });
-
-    // 6. Schedule Email 2 in user_email_campaigns (Day 4)
+    // BATCH 3: Parallelize Log insertion & Campaign enrollment
     const nextSendDate = email2
       ? EmailScheduler.calculateNextSendDate(email2.delay_value, email2.delay_unit)
       : new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
 
-    await supabaseAdmin.from("user_email_campaigns").upsert(
-      {
+    await Promise.all([
+      supabaseAdmin.from("email_delivery_logs").insert({
         user_id: waitlistUserId,
         audience_type: "waitlist",
-        campaign_id: campaign.id,
-        current_template_id: email1.id,
-        status: "active",
-        started_at: new Date().toISOString(),
-        last_sent_at: new Date().toISOString(),
-        next_send_at: nextSendDate.toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,campaign_id" }
-    );
+        campaign_id: campaignId,
+        template_id: email1.id,
+        recipient_email: normalizedEmail,
+        subject: rendered.subject,
+        status: sendRes.success ? "sent" : "failed",
+        provider: this.provider.name,
+        message_id: sendRes.messageId || null,
+        error_message: sendRes.error || null,
+        sent_at: sendRes.success ? new Date().toISOString() : null,
+        scheduled_at: new Date().toISOString(),
+      }),
+      supabaseAdmin.from("user_email_campaigns").upsert(
+        {
+          user_id: waitlistUserId,
+          audience_type: "waitlist",
+          campaign_id: campaignId,
+          current_template_id: email1.id,
+          status: "active",
+          started_at: new Date().toISOString(),
+          last_sent_at: new Date().toISOString(),
+          next_send_at: nextSendDate.toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,campaign_id" }
+      ),
+    ]);
   }
 }
