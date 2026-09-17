@@ -11,7 +11,8 @@ export const maxDuration = 30;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const rawEmail = body?.user_email || body?.email;
+    const rawEmail = body?.email || body?.user_email;
+    const isOAuth = body?.authMethod === 'google';
 
     if (!rawEmail || typeof rawEmail !== 'string') {
       return NextResponse.json(
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
     }
 
     const sanitizedEmail = rawEmail.trim().toLowerCase();
+    const fullName = (body.fullName || body.user_name || '').trim();
 
     // 1. Check existence in both tables simultaneously
     const [profileCheck, waitlistCheck] = await Promise.all([
@@ -70,17 +72,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Perform DB insertion
+    // 2. Perform DB insertion with exact expected keys
     const resp = await insertWaitListEmail({
-      ...body,
+      email: sanitizedEmail,
       user_email: sanitizedEmail,
-    });
+      fullName: fullName,
+      user_name: fullName,
+      password: isOAuth ? '': body.password,
+      authMethod: isOAuth ? 'google' : 'email',
+    } as any);
 
     // 3. Dispatch background welcome email safely using after()
     if (resp?.id) {
       const waitlistUserId = resp.id;
       const targetEmail = sanitizedEmail;
-      const targetName = resp.user_name || body.name || body.user_name || '';
+      const targetName = fullName || resp.user_name || '';
 
       after(async () => {
         try {

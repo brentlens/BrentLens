@@ -19,11 +19,24 @@ export const getWaitListEmail = async () => {
 };
 
 
-export const insertWaitListEmail = async (values: WaitlistFormData) => { // Basic validation 
-  if (!values.email) { throw new ApiError("Email is required", 400, "INVALID_EMAIL"); }
-  if (!values.password) { throw new ApiError("Password is required", 400, "INVALID_PASSWORD"); }
-  if (!values.fullName) { throw new ApiError("Full name is required", 400, "INVALID_NAME"); }
-  // Check if user already exists 
+export const insertWaitListEmail = async (
+  values: WaitlistFormData & { authMethod?: 'google' | 'email' }
+) => {
+  const isOAuth = values.authMethod === 'google';
+
+  // Basic validation
+  if (!values.email) {
+    throw new ApiError("Email is required", 400, "INVALID_EMAIL");
+  }
+  if (!values.fullName) {
+    throw new ApiError("Full name is required", 400, "INVALID_NAME");
+  }
+  // Only require password for regular email signups
+  if (!isOAuth && !values.password) {
+    throw new ApiError("Password is required", 400, "INVALID_PASSWORD");
+  }
+
+  // Check if user already exists
   const { data: existing, error: existingErr } = await supabase
     .from("brent_waitlistUsers")
     .select("user_email")
@@ -32,21 +45,33 @@ export const insertWaitListEmail = async (values: WaitlistFormData) => { // Basi
 
   if (existingErr) {
     console.error("Supabase lookup error:", existingErr);
-    throw new ApiError("Unable to check whether the email already exists", 500, "DATABASE_ERROR");
+    throw new ApiError(
+      "Unable to check whether the email already exists",
+      500,
+      "DATABASE_ERROR"
+    );
   }
-  if (existing) { throw new ApiError("This email is already on the waitlist", 409, "USER_EXISTS"); }
+  if (existing) {
+    throw new ApiError("This email is already on the waitlist", 409, "USER_EXISTS");
+  }
 
-  const obj = { user_pass: values.password, user_name: values.fullName, user_email: values.email, };
+  const obj = {
+    user_pass: isOAuth ? null : values.password, // Set to null (or "" if column is NOT NULL)
+    user_name: values.fullName,
+    user_email: values.email,
+  };
 
   const { data, error } = await supabase
     .from("brent_waitlistUsers")
     .insert(obj)
     .select("id,user_email,isRegistered,user_name")
     .single();
+
   if (error) {
     console.error("Supabase insert error:", error);
     throw new ApiError("Unable to add user to the waitlist", 500, "DATABASE_ERROR");
   }
+
   return data;
 };
 

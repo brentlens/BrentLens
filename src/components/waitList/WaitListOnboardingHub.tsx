@@ -6,7 +6,7 @@ import { createClient } from '@/lib/client';
 import { WaitlistFormData } from '@/types/onboarding';
 import { Check, ChevronDown, Mail, Sun } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 
 const validateEmail = (email: string) => {
@@ -36,16 +36,19 @@ export const WaitlistComponent: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // Hard synchronous lock to prevent React StrictMode double executions
+    const isProcessingOAuth = useRef(false);
+
     // Validation conditions
     const isNameValid = formData.fullName.trim().length > 0;
     const isEmailValid = validateEmail(formData.email);
-	const isPasswordValid = 
-  Boolean(formData.password && formData.password.length >= 8 &&
-  formData.password.length <= 10 &&
-  !/\s/.test(formData.password) &&
-  /[A-Z]/.test(formData.password) &&
-  /[0-9]/.test(formData.password) &&
-  /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(formData.password));
+    const isPasswordValid = 
+        Boolean(formData.password && formData.password.length >= 8 &&
+        formData.password.length <= 10 &&
+        !/\s/.test(formData.password) &&
+        /[A-Z]/.test(formData.password) &&
+        /[0-9]/.test(formData.password) &&
+        /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(formData.password));
 
     const isFormValid = Boolean(isNameValid && isEmailValid && isPasswordValid);
 
@@ -63,34 +66,179 @@ export const WaitlistComponent: React.FC = () => {
         }
     }, [state]);
 
-    // Read active OAuth session on mount if user returns from Google OAuth callback
-    useEffect(() => {
-        const checkActiveOAuthUser = async () => {
-            if (state?.auth?.method === 'google' && state?.auth?.email) return;
+    const resetFormData = () => {
+        setFormData({
+            fullName: '',
+            email: '',
+            password: '',
+        });
 
-            const supabase = createClient();
-            const { data: { user } } = await supabase.auth.getUser();
+        setTouched({
+            fullName: false,
+            email: false,
+            password: false,
+        });
 
-            if (user) {
-                const fetchedEmail = user.email || '';
-                const fetchedName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+        updateState((prev: any) => ({
+            ...prev,
+            auth: {
+                ...prev?.auth,
+                user_name: '',
+                email: '',
+                password: '',
+            },
+        }));
+    };
 
-                setMethod('google');
+    const submitFormData = async (data: WaitlistFormData, isOAuth: boolean = false) => {
+        if (loading) return false; // Guard against concurrent submissions
+        const supabase = createClient();
+
+        try {
+            setLoading(true);
+            setError(null);
+			
+            const payload = {
+                fullName: data.fullName,
+                email: data.email,
+                password: isOAuth ? '' : data.password,
+                authMethod: isOAuth ? 'google' : 'email',
+            };
+
+            const response = await fetch('/api/waitList', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                const errorMessage = result.error || 'Failed to join waitlist.';
+
+                setError(errorMessage);
+                toast.error(errorMessage);
+
+                resetFormData();
+                setMethod(null);
                 setShowEmail(false);
+                
+                await supabase.auth.signOut();
+
                 updateState((prev: any) => ({
                     ...prev,
                     auth: {
                         ...prev?.auth,
-                        method: 'google',
-                        email: fetchedEmail,
-                        user_name: fetchedName,
+                        method: null,
+                        user_name: '',
+                        email: '',
                         password: '',
                     },
                 }));
+
+                return false;
             }
+
+            toast.success('User added to wait list');
+            setIsSubmitted(true);
+            return true;
+        } catch (err: any) {
+            console.error('Waitlist submission error:', err);
+
+            setError('Network error. Please try again.');
+            toast.error('Network error. Please try again.');
+
+            resetFormData();
+            setMethod(null);
+            setShowEmail(false);
+
+            await supabase.auth.signOut();
+
+            updateState((prev: any) => ({
+                ...prev,
+                auth: {
+                    ...prev?.auth,
+                    method: null,
+                    user_name: '',
+                    email: '',
+                    password: '',
+                },
+            }));
+
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleGoogleWaitlistSubmit = async (fullName: string, email: string) => {
+        const googleFormData: WaitlistFormData = {
+            fullName,
+            email,
+            password: '',
         };
+        setFormData(googleFormData);
+        setMethod('google');
+        setShowEmail(false);
+        updateState((prev: any) => ({
+            ...prev,
+            auth: {
+                ...prev?.auth,
+                method: 'google',
+                email,
+                user_name: fullName,
+                password: '',
+            },
+        }));
+
+        await submitFormData(googleFormData, true);
+    };
+
+    const checkActiveOAuthUser = async () => {
+        // 1. Check lock synchronously
+        if (isProcessingOAuth.current) return;
+
+        // 2. Lock IMMEDIATELY before any asynchronous code or await statements
+        isProcessingOAuth.current = true;
+
+        try {
+            const supabase = createClient();
+            const { data: { user }, error: authErr } = await supabase.auth.getUser();
+
+            if (authErr || !user) {
+                // If there is no active OAuth session, release lock for manual flow
+                isProcessingOAuth.current = false;
+                return;
+            }
+
+            if (state?.waitlist?.joinedWaitlist) {
+                return;
+            }
+
+            const fetchedEmail = user.email || '';
+            const fetchedName =
+                user.user_metadata?.full_name ||
+                user.user_metadata?.name ||
+                '';
+
+            if (!fetchedEmail) {
+                setError('Unable to get email from Google account.');
+                isProcessingOAuth.current = false;
+                return;
+            }
+
+            await handleGoogleWaitlistSubmit(fetchedName, fetchedEmail);
+        } catch (e) {
+            console.error('OAuth check error:', e);
+            isProcessingOAuth.current = false;
+        }
+    };
+
+    useEffect(() => {
         checkActiveOAuthUser();
-    }, [updateState, state?.auth?.method, state?.auth?.email]);
+    }, []);
 
     const isOAuthVerified = method === 'google' && !!formData.email;
 
@@ -100,9 +248,9 @@ export const WaitlistComponent: React.FC = () => {
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
+        if (error) setError(null);
         setFormData((prev) => ({ ...prev, [name]: value }));
 
-        // Map input fields to context values
         const contextField = name === 'fullName' ? 'user_name' : name;
         updateState((prev: any) => ({
             ...prev,
@@ -114,32 +262,49 @@ export const WaitlistComponent: React.FC = () => {
     };
 
     const handleGoogleAuthClick = async () => {
-        if (isOAuthVerified) {
-            alert("Already authenticated via linked corporate Google account profile.");
-            return;
-        }
+        if (loading) return;
 
         const supabase = createClient();
+        setError(null);
+        setLoading(true);
+
         updateState((prev: any) => ({
             ...prev,
-            auth: { ...prev?.auth, method: 'google', email: '', user_name: '', password: '' },
+            auth: {
+                ...prev?.auth,
+                method: 'google',
+                email: '',
+                user_name: '',
+                password: '',
+            },
         }));
 
-        await supabase.auth.signInWithOAuth({
+        const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: `${window.location.origin}/auth/callback`,
+                redirectTo: `${window.location.origin}/auth/callback?pageRoute=/waitlist`,
                 queryParams: {
                     prompt: 'select_account',
                     access_type: 'offline',
                 },
             },
         });
+
+        if (error) {
+            console.error('Google authentication error:', error);
+            setLoading(false);
+            setError(error.message);
+            toast.error(error.message);
+
+            resetFormData();
+            setMethod(null);
+            setShowEmail(false);
+        }
     };
 
     const toggleEmailFields = () => {
         if (isOAuthVerified) {
-            alert("Account locked via active identity session verification layer.");
+            alert('Account locked via active identity session verification layer.');
             return;
         }
         const nextState = !showEmail;
@@ -159,10 +324,9 @@ export const WaitlistComponent: React.FC = () => {
         }
     };
 
-    const handleFormSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleManualSubmit = () => {
+        if (loading) return;
 
-        // Mark all fields touched on manual submit attempt
         setTouched({
             fullName: true,
             email: true,
@@ -185,9 +349,7 @@ export const WaitlistComponent: React.FC = () => {
         }
 
         setError(null);
-        setLoading(true);
 
-        // Save full auth state and waitlist details to PreRegistration context
         updateState((prev: any) => ({
             ...prev,
             auth: {
@@ -204,32 +366,7 @@ export const WaitlistComponent: React.FC = () => {
             },
         }));
 
-        submitFormData();
-    };
-
-    const submitFormData = async () => {
-        try {
-            const response = await fetch('/api/waitList', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData),
-            });
-
-            const result = await response.json();
-            setLoading(false);
-            if (!response.ok) {
-                setError(result.error || 'Failed to join waitlist.');
-                toast.error(result.error || 'Something went wrong.');
-                return;
-            } else {
-                toast.success('User added to wait list');
-                setIsSubmitted(true);
-            }
-        } catch (err: any) {
-            setLoading(false);
-            setError('Network error. Please try again.');
-            toast.error('Network error. Please try again.');
-        }
+        submitFormData(formData, false);
     };
 
     const handleReserveFoundingRate = () => {
@@ -242,7 +379,7 @@ export const WaitlistComponent: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-start font-sans text-slate-800">
-            {/* Top Navigation / Brand Header */}
+            {/* Brand Header */}
             <header className="w-full flex sm:justify-start justify-center bg-white border-b border-b-gray-200 mb-8">
                 <div className="flex items-center py-3 px-10">
                     <img
@@ -254,22 +391,24 @@ export const WaitlistComponent: React.FC = () => {
                 </div>
             </header>
 
-            {/* Main Card Container */}
+            {/* Main Container */}
             <div className="w-full max-w-lg mx-auto p-12 bg-[var(--card-bg)] rounded-3xl border border-gray-200 shadow-xl">
+                {/* Error Banner */}
                 {error && (
-                    <div className="mb-4 p-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded">
-                        {error}
+                    <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-red-200 bg-[#FFF1F2] p-3 text-[13px] font-medium text-[#E11D48] shadow-sm animate-[fadeIn_0.2s_ease]">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#E11D48] text-white text-[10px] font-bold">
+                            !
+                        </span>
+                        <span>{error}</span>
                     </div>
                 )}
 
                 {isSubmitted ? (
                     <div className="text-center py-6">
-                        {/* Top Checkmark Badge */}
                         <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[linear-gradient(135deg,#7C3AED_0%,#4F46E5_55%,#06B6D4_100%)] text-white shadow-lg shadow-indigo-200">
                             <Check className="h-10 w-10 stroke-[3]" />
                         </div>
 
-                        {/* Main Heading & Subtitle */}
                         <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-3">
                             You are on the list!
                         </h2>
@@ -277,9 +416,7 @@ export const WaitlistComponent: React.FC = () => {
                             We will email you the moment your dashboard is ready. In the meantime here is what happens next.
                         </p>
 
-                        {/* Steps List Card */}
                         <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-5 text-left mb-6 divide-y divide-slate-200/60">
-                            {/* Step 1 */}
                             <div className="flex gap-3.5 pb-4">
                                 <div className="flex-shrink-0 mt-0.5">
                                     <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -295,7 +432,6 @@ export const WaitlistComponent: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Step 2 */}
                             <div className="flex gap-3.5 py-4">
                                 <div className="flex-shrink-0 mt-0.5">
                                     <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -310,7 +446,6 @@ export const WaitlistComponent: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Step 3 */}
                             <div className="flex gap-3.5 pt-4">
                                 <div className="flex-shrink-0 mt-0.5">
                                     <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -326,7 +461,6 @@ export const WaitlistComponent: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Immediate Access CTA Box */}
                         <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-6 text-center">
                             <span className="block text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-2">
                                 WANT IMMEDIATE ACCESS?
@@ -344,8 +478,7 @@ export const WaitlistComponent: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    <form onSubmit={handleFormSubmit} noValidate>
-                        {/* Free Waitlist Tag */}
+                    <div>
                         <div className="card-tag mb-[16px]">
                             <svg width="8" height="8" viewBox="0 0 8 8">
                                 <circle cx="4" cy="4" r="3.5" fill="#7C3AED" />
@@ -361,15 +494,15 @@ export const WaitlistComponent: React.FC = () => {
                             We will notify you the moment your dashboard is ready — and you will be first in line for founding member pricing.
                         </p>
 
-                        {/* Google Auth Button */}
                         <button
                             type="button"
-                            disabled={isOAuthVerified}
+                            disabled={isOAuthVerified || loading}
                             onClick={handleGoogleAuthClick}
-                            className={`w-full p-[14px_20px] rounded-[var(--r)] border-[1.5px] flex items-center justify-center gap-[12px] text-[15px] font-semibold text-[var(--ink)] transition-all duration-[180ms] mb-[12px] ${isOAuthVerified
-                                ? 'opacity-65 cursor-not-allowed bg-[var(--surf2)] border-[var(--green)]'
-                                : 'bg-[var(--card-bg)] border-[var(--bd2)] hover:bg-[var(--card-h)] hover:border-[var(--pur2)] hover:-translate-y-[1px] hover:shadow-[var(--sh)]'
-                                }`}
+                            className={`w-full p-[14px_20px] rounded-[var(--r)] border-[1.5px] flex items-center justify-center gap-[12px] text-[15px] font-semibold text-[var(--ink)] transition-all duration-[180ms] mb-[12px] ${
+                                isOAuthVerified
+                                    ? 'opacity-65 cursor-not-allowed bg-[var(--surf2)] border-[var(--green)]'
+                                    : 'bg-[var(--card-bg)] border-[var(--bd2)] hover:bg-[var(--card-h)] hover:border-[var(--pur2)] hover:-translate-y-[1px] hover:shadow-[var(--sh)]'
+                            }`}
                         >
                             <svg className="w-[20px] h-[20px] shrink-0" viewBox="0 0 20 20">
                                 <path d="M19.6 10.23c0-.68-.06-1.36-.17-2H10v3.79h5.39a4.6 4.6 0 01-2 3.02v2.51h3.23c1.89-1.74 2.98-4.3 2.98-7.32z" fill="#4285F4" />
@@ -388,7 +521,6 @@ export const WaitlistComponent: React.FC = () => {
 
                         {showEmail && !isOAuthVerified && (
                             <div className="space-y-[14px] mb-[14px]">
-                                {/* Full Name Field */}
                                 <div>
                                     <label className="block mb-[6px] text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)]">
                                         Full name <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
@@ -418,7 +550,6 @@ export const WaitlistComponent: React.FC = () => {
                                     )}
                                 </div>
 
-                                {/* Work Email Field */}
                                 <div>
                                     <label className="block mb-[6px] text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)]">
                                         Work email <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
@@ -443,39 +574,40 @@ export const WaitlistComponent: React.FC = () => {
                                             <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
                                                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                             </svg>
-                                            <span>{formData.email.trim().length === 0 ? "Email address is required." : "Enter a valid email address."}</span>
+                                            <span>{formData.email.trim().length === 0 ? 'Email address is required.' : 'Enter a valid email address.'}</span>
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Password Field */}
                                 <div>
-                                    <label className="block mb-[6px] text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)]">
+                                    <label className="block mb-[6px] text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink3)] sm:text-[11px]">
                                         Password <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
                                     </label>
                                     <div className="relative flex items-center">
-										<input
-      type={showPassword ? "text" : "password"}
-      name="password"
-      placeholder="8-10 chars (1 uppercase, 1 number, 1 symbol)"
-      maxLength={10}
-      value={formData.password}
+                                        <input
+                                            type={showPassword ? 'text' : 'password'}
+                                            name="password"
+                                            placeholder="8-10 chars (1 uppercase, 1 number, 1 symbol)"
+                                            maxLength={10}
+                                            value={formData.password}
                                             onChange={handleInputChange}
-      onKeyDown={(e) => {
-        // Block spacebar completely
-        if (e.key === " ") {
-          e.preventDefault();
-        }
-      }}
-      onBlur={() => handleBlur('password')}
-      aria-invalid={touched.password && !isPasswordValid}
-      aria-describedby="password-error"
-      className={`w-full rounded-[var(--r2)] border-[1.5px] bg-[var(--input-bg)] p-[12px_40px_12px_15px] text-[14px] text-[var(--ink)] transition-all focus:outline-none ${
-        touched.password && !isPasswordValid
-          ? "border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
-          : "border-[var(--bd2)] focus:border-[var(--pur2)] focus:shadow-[0_0_0_3px_var(--ps)]"
-      }`}
-    />
+                                            onKeyDown={(e) => {
+                                                if (e.key === ' ') {
+                                                    e.preventDefault();
+                                                }
+                                                if (e.key === 'Enter' && isFormValid) {
+                                                    handleManualSubmit();
+                                                }
+                                            }}
+                                            onBlur={() => handleBlur('password')}
+                                            aria-invalid={touched.password && !isPasswordValid}
+                                            aria-describedby="waitlist-password-error"
+                                            className={`w-full rounded-[var(--r2)] border-[1.5px] bg-[var(--input-bg)] p-[12px_40px_12px_15px] text-[14px] text-[var(--ink)] transition-all focus:outline-none ${
+                                                touched.password && !isPasswordValid
+                                                    ? 'border-red-500 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]'
+                                                    : 'border-[var(--bd2)] focus:border-[var(--pur2)] focus:shadow-[0_0_0_3px_var(--ps)]'
+                                            }`}
+                                        />
                                         <button
                                             type="button"
                                             onClick={togglePasswordVisibility}
@@ -496,13 +628,13 @@ export const WaitlistComponent: React.FC = () => {
                                         </button>
                                     </div>
                                     {touched.password && !isPasswordValid && (
-    <div id="password-error" className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-red-500 sm:text-[12px]">
-      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-      </svg>
-      <span>Must be 8–10 chars with 1 capital, 1 number, and 1 special symbol (no spaces).</span>
-    </div>
-  )}
+                                        <div id="waitlist-password-error" className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-red-500 sm:text-[12px]">
+                                            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            <span>Must be 8–10 chars with 1 capital, 1 number, and 1 special symbol (no spaces).</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -521,12 +653,14 @@ export const WaitlistComponent: React.FC = () => {
 
                         {(showEmail || isOAuthVerified) && (
                             <button
-                                type="submit"
-                                disabled={showEmail && !isFormValid}
-                                className={`w-full justify-center px-7 py-3.5 rounded-lg text-white text-[15px] font-bold inline-flex items-center gap-2 transition-all duration-180 ${showEmail && !isFormValid
-                                    ? 'bg-gray-300 cursor-not-allowed opacity-60 shadow-none'
-                                    : 'bg-gradient-to-br from-pur to-cyan shadow-[0_4px_20px_rgba(124,58,237,0.35)] hover:translate-y-[-2px] hover:shadow-[0_8px_32px_rgba(124,58,237,0.5)] cursor-pointer'
-                                    }`}
+                                type="button"
+                                disabled={(showEmail && !isFormValid) || loading}
+                                onClick={handleManualSubmit}
+                                className={`w-full justify-center px-7 py-3.5 rounded-lg text-white text-[15px] font-bold inline-flex items-center gap-2 transition-all duration-180 ${
+                                    (showEmail && !isFormValid) || loading
+                                        ? 'bg-gray-300 cursor-not-allowed opacity-60 shadow-none'
+                                        : 'bg-gradient-to-br from-pur to-cyan shadow-[0_4px_20px_rgba(124,58,237,0.35)] hover:translate-y-[-2px] hover:shadow-[0_8px_32px_rgba(124,58,237,0.5)] cursor-pointer'
+                                }`}
                             >
                                 {loading ? (
                                     <>
@@ -542,7 +676,7 @@ export const WaitlistComponent: React.FC = () => {
                         <div className="text-[11px] text-[var(--ink3)] text-center max-w-full leading-[1.6] mt-[16px] flex items-start gap-[5px] justify-center">
                             <span>No credit card · No spam · Unsubscribe any time</span>
                         </div>
-                    </form>
+                    </div>
                 )}
             </div>
         </div>
