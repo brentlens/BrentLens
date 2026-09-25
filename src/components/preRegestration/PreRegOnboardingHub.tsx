@@ -38,7 +38,7 @@ export const PreRegOnboardingHub: React.FC = () => {
   const router = useRouter();
   const totalSteps = 3;
 
-  const claimed = 12;
+  const claimed = 2489;
   const total = 3500;
   const subtitle = 'Rate locked forever';
 

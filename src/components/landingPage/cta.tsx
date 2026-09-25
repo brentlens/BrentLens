@@ -53,7 +53,7 @@ export default function CTA({
 			{isPreLanding ? 
 			<> 
 			<div className="flex gap-2 justify-center items-center">
-				12 of 3,500 founding seats claimed
+				2489 of 3,500 founding seats claimed
 				<div className="w-[3px] h-[3px] rounded-full bg-bd2" />
 				Seat limit, not a time limit
 				<div className="w-[3px] h-[3px] rounded-full bg-bd2" />

@@ -12,7 +12,7 @@ const stepsMeta = [
 
 export const LeftNavigationPanel: React.FC = () => {
   const { state } = usePreRegistration();
-  const claimed = 12;
+  const claimed = 2489;
   const total = 3500;
   const subtitle = 'Rate locked forever'
   // Calculate percentage for the progress bar fill

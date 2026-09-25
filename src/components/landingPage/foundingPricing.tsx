@@ -50,10 +50,10 @@ export default function FoundingPricing() {
 
           <div className="w-full sm:w-auto text-right space-y-1.5 shrink-0">
             <div className="w-full sm:w-48 bg-slate-200 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-[#059669] h-full rounded-full" style={{ width: "2%" }}></div>
+              <div className="bg-[#059669] h-full rounded-full" style={{ width: "71%" }}></div>
             </div>
             <div className="text-xs font-bold text-[#0F172A] tracking-tight">
-              12 / 3,500 seats claimed
+              2489 / 3,500 seats claimed
             </div>
           </div>
         </div>
@@ -292,7 +292,7 @@ export default function FoundingPricing() {
           <strong className="text-slate-800">Founding member rate is permanent.</strong> You pay this price for as long as you stay subscribed — even after we raise prices for everyone else. This is a seat limit, not a time limit.
         </p>
 
-		<EnterpriseBanner/>
+		{/* <EnterpriseBanner/> */}
 
       </div>
     </section>

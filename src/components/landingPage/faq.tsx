@@ -3,29 +3,46 @@ import React from 'react';
 // Array of FAQ objects for easy content updates
 const faqData = [
   {
-    question: "What is the founding member rate exactly?",
-    answer: "The price you see now is your permanent price. When we raise prices for new customers after 3,500 seats fill, you keep paying your founding rate. Forever. No annual reviews, no legacy pricing that expires."
+    question: "What exactly does BrentLens do?",
+    answer:
+      "BrentLens tracks Brent crude movements and translates them into estimated cost impact for your business. Instead of just showing you that oil moved, it helps you understand what that movement could mean for your fuel costs.",
   },
   {
-    question: "Is this a time limit or a seat limit?",
-    answer: "Seat limit only. No deadline. If 3,500 seats fill in a week, the founding rate closes in a week. The counter on this page shows exactly how many remain."
+    question: "Is BrentLens just another oil-price tracker?",
+    answer:
+      "No. BrentLens is built around the impact of oil prices, not just the price itself. It connects Brent movement with your country, industry, fuel exposure, and spending so you can see what the movement could mean for your costs.",
   },
   {
-    question: "How does BrentLens calculate my cost impact?",
-    answer: "Four inputs: Brent 30-day change × your country's pass-through rate × your sector sensitivity score × your monthly fuel spend. Every input is configurable. The formula is transparent — we show you the basis for every number."
+    question: "Who is BrentLens built for?",
+    answer:
+      "BrentLens is built for businesses where fuel costs can materially affect margins — including logistics, maritime, aviation, manufacturing, construction, and agribusiness.",
   },
   {
-    question: "What if the dashboard is not ready when I sign up?",
-    answer: "You get a personalised fuel exposure report immediately after signup based on your onboarding data. Full dashboard access is delivered when ready — and founding members are first in line."
+    question: "What do I get as a founding member?",
+    answer:
+      "You get permanent access at the founding rate, your personalised fuel exposure assessment, and priority access to the BrentLens dashboard and future founding-member features.",
   },
   {
-    question: "Which industries does BrentLens support?",
-    answer: "Logistics & freight, aviation, maritime, manufacturing, construction, and agribusiness. Each has its own sensitivity score, sector lag adjustment, and action signal templates calibrated to that industry's cost structure."
+    question: "What happens after I join?",
+    answer:
+      "You complete a short onboarding covering your industry, country, business scale, and fuel exposure. BrentLens then uses this information to build your initial fuel-impact profile. As the platform launches, your account will be ready for dashboard access.",
   },
   {
-    question: "Can I cancel and rejoin at the founding rate later?",
-    answer: "No. The founding rate is tied to your continuous subscription. If you cancel, your seat is released. You would rejoin at whatever the current price is at that time."
-  }
+    question: "Does my business size affect my subscription price?",
+    answer:
+      "No. Your onboarding information is used to personalise your fuel-impact analysis, not to determine your founding membership rate.",
+  },
+  {
+    question: "Is the cost impact an exact prediction?",
+    answer:
+      "No. BrentLens provides an estimated impact based on the information available and the assumptions used in your profile. It is designed to help you understand exposure and direction — not replace your actual fuel invoices, contracts, or financial models.",
+  },
+  {
+    question: "Does BrentLens predict where oil prices will go?",
+    answer:
+      "BrentLens provides a 30-day outlook alongside current Brent movement and business-impact analysis. Forecasts are estimates, not guarantees, and market conditions can change quickly.",
+  },
+  
 ];
 
 export default function Faq() {
