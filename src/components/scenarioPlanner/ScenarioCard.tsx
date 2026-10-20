@@ -41,7 +41,7 @@ export default function ScenarioCard({
 
       <hr className="my-4 border-gray-300 " />
 
-      <Metric title="Brent price" value={price} />
+      <Metric title="Brent price" value={formatCurrency(price, false)} />
       <Metric title="Your cost impact" value={formatCurrency(impact)} />
       <Metric title="Budget revision" value={formatCurrency(budget, false)} />
       <Metric title="Risk level" value={risk} />
@@ -53,11 +53,17 @@ export default function ScenarioCard({
   val: string | number,
   showSign: boolean = true
 ) => {
-  // Convert string to number, defaulting to 0 if invalid or empty
-  const numericVal = typeof val === "number" ? val : parseFloat(val) || 0;
+  let numericVal: number;
+
+  if (typeof val === "number") {
+    numericVal = val;
+  } else {
+    // Strip out $, commas, and whitespace before parsing
+    const cleanedString = String(val).replace(/[\$,\s]/g, "");
+    numericVal = parseFloat(cleanedString) || 0;
+  }
 
   const sign = numericVal >= 0 ? "+" : "-";
-
   const formatted = Math.abs(numericVal).toLocaleString("en-US");
 
   return showSign

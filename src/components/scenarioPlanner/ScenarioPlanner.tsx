@@ -163,7 +163,7 @@ export default function ScenarioPlanner() {
 
                             <ScenarioCard
                                 active
-                                title={"Your Scenario" + '$' + scenarioValues.price}
+                                title={"Your Scenario " + '$' + scenarioValues.price}
                                 price={scenarioValues.price}
                                 impact={scenarioValues.impact}
                                 budget={scenarioValues.budget}

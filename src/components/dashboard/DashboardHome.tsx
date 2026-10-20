@@ -55,8 +55,8 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
   const [marginImpact, setMarginImpact] = useState<number>(0);
 
   const fetchLatestData = async () => {
-    // const id = "7f1a5995-9933-4114-8702-8f7c458b4f50";
-    const id = "8c1c4b55-e94b-490d-9bb8-12d4b0fe6e44"; 
+    const id = "7f1a5995-9933-4114-8702-8f7c458b4f50";
+    // const id = "8c1c4b55-e94b-490d-9bb8-12d4b0fe6e44"; 
 
     const response = await fetch(`/api/user/userSettings?id=${id}`, {
       method: "GET",
@@ -110,7 +110,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
 
 
   const upsertImpactEvent = async (shock: number, totalCalc: number) => {
-    const user_id = "8c1c4b55-e94b-490d-9bb8-12d4b0fe6e44";
+    const user_id = "7f1a5995-9933-4114-8702-8f7c458b4f50";
 
     let payload = {
       user_id: user_id,
@@ -421,7 +421,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                     <div className="mt-1 flex items-center gap-2">
                       <IndianRupee className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-bold text-red-500">
-                        + {brentData.additionalCostToday}
+                        + {brentData.additionalCostToday?.toFixed(2)}
                       </span>
                     </div>
 
