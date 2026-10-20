@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
+import { COUNTRIES } from '@/configs/countries';
+import { sectors } from '@/configs/sectors';
 import { createClient } from '@/lib/client';
+import { BrentData } from '@/types/dashboard';
 import React, { useEffect, useState } from 'react';
 
 interface PriceStatusBarProps {
@@ -15,9 +18,23 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
 }) => {
   const [brentPrice, setBrentPrice] = useState<number>(initialBrentPrice);
   const [priceChangePercent, setPriceChangePercent] = useState<number>(initialPriceChangePercent);
-  const [brent30DPercent, setBrent30DPercent] = useState<number>(-25.95); 
+  const [brent30DPercent, setBrent30DPercent] = useState<number>(-25.95);
   const [updatedAt, setUpdatedAt] = useState<string>('14:32 UTC');
-
+  const [brentData, setBrentData] = useState<BrentData>({
+    pass_through_rate: 0,
+    sensitivity_score: 0,
+    spend_bracket: 0,
+    brent_30_days_move: 0,
+    sectorName: '',
+    impactLag: 0,
+    currentPrice: 0,
+    formattedPrice: '',
+    additionalCostToday: 0,
+    totalCalc: 0,
+    days_remaining: 0,
+    latest_shock: null,
+    last_shock: null
+  })
   const formatTime = (dateString?: string) => {
     if (!dateString) return 'Just now';
     const date = new Date(dateString);
@@ -31,22 +48,22 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
   const updatePriceStates = (record: any) => {
     if (record && record.price !== undefined) {
       setBrentPrice(record.price);
-      
+
       if (record.changes) {
         // Handle parsing safely if it arrives as a string or raw object
         const changesObj = typeof record.changes === 'string' ? JSON.parse(record.changes) : record.changes;
-        
+
         // 1. Map "24h" -> Brent Today
         if (changesObj?.["24h"]?.percent !== undefined) {
           setPriceChangePercent(changesObj["24h"].percent);
         }
-        
+
         // 2. Map "30d" -> Brent 30D
         if (changesObj?.["30d"]?.percent !== undefined) {
           setBrent30DPercent(changesObj["30d"].percent);
         }
       }
-      
+
       setUpdatedAt(formatTime(record.created_at || record.updated_at));
     }
   };
@@ -54,13 +71,16 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
   useEffect(() => {
     let priceSubscription: any = null;
 
+    fetchLatestData()
+
+
     const initSupabaseAndSubscribe = async () => {
       // Fixed top-level await bug by initializing inside the hook
       const supabase = await createClient();
 
       const fetchLatestPrice = async () => {
         const { data, error } = await supabase
-          .from('brentLens_brent_crude') 
+          .from('brentLens_brent_crude')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(1)
@@ -78,9 +98,9 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
         .on(
           'postgres_changes',
           {
-            event: 'INSERT', 
+            event: 'INSERT',
             schema: 'public',
-            table: 'brentLens_brent_crude', 
+            table: 'brentLens_brent_crude',
           },
           (payload) => {
             updatePriceStates(payload.new);
@@ -94,12 +114,26 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
     return () => {
       if (priceSubscription) {
         // Automatically unsubscribes when the component unmounts
-        createClient().then((supabase) => {
+        createClient().then((supabase:any) => {
           supabase.removeChannel(priceSubscription);
         });
       }
     };
+
+
   }, []);
+
+  const fetchLatestData = async () => {
+
+    let brentObj = JSON.parse(localStorage.getItem('brentObj') || '');
+    let shockObj = JSON.parse(localStorage.getItem('shockObj') || '')
+    if (brentData) {
+      setBrentData({
+        ...brentObj,
+        ...shockObj
+      })
+    }
+  };
 
   // Logical Helpers
   const isTodayIncreased = priceChangePercent > 0;
@@ -115,19 +149,31 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
     <div className="biz-bar">
       <div className="biz-item">
         <div className="biz-l">Expected Cost Impact</div>
-        <div className="biz-v"><span className="up">+&euro;8,400</span></div>
+        <div className="biz-v"><span className="up">
+          {/* +&euro;8,400 */}
+          +${brentData.totalCalc}
+        </span>
+        </div>
         <div className="biz-s">This month</div>
       </div>
 
       <div className="biz-item">
         <div className="biz-l">Budget Risk</div>
-        <div className="biz-v"><span className="up">HIGH</span></div>
+        <div className="biz-v"><span className="up">
+          {/* HIGH */}
+          {brentData.latest_shock?.riskLevel ?? 'N/A'}
+        </span>
+        </div>
         <div className="biz-s">Act within 9 days</div>
       </div>
 
       <div className="biz-item">
         <div className="biz-l">Time to Impact</div>
-        <div className="biz-v"><span className="up">9 days</span></div>
+        <div className="biz-v"><span className="up">
+          {/* 9 days */}
+          {brentData.days_remaining} days
+        </span>
+        </div>
         <div className="biz-s">Logistics lag</div>
       </div>
 
@@ -142,11 +188,11 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
         <div className="biz-v">
           <span>${brentPrice.toFixed(2)}</span>
           &nbsp;
-          <span 
-            className="up" 
-            style={{ 
-              fontSize: '10px', 
-              fontWeight: '700', 
+          <span
+            className="up"
+            style={{
+              fontSize: '10px',
+              fontWeight: '700',
               marginLeft: '4px',
               color: todayColor
             }}
@@ -160,9 +206,9 @@ export const PriceStatusBar: React.FC<PriceStatusBarProps> = ({
       <div className="biz-item">
         <div className="biz-l">Brent 30D</div>
         <div className="biz-v">
-          <span 
+          <span
             className="up"
-            style={{ 
+            style={{
               color: thirtyDayColor
             }}
           >

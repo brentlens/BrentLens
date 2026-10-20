@@ -10,6 +10,7 @@ import DashboardHome from '@/components/dashboard/DashboardHome';
 import CostOutlook from '@/components/costOutlook/CostOutlook';
 import ScenarioPlanner from '@/components/scenarioPlanner/ScenarioPlanner';
 import MonthlyVarianceReports from '@/components/Reports/MonthlyVarianceReports';
+import SettingsPage from '@/components/dashboard/SettingsPage';
 
 export default function DashboardClientPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('dashboard');
@@ -72,10 +73,7 @@ export default function DashboardClientPage() {
         );
       case 'settings':
         return (
-          <div className="page active" style={{ padding: '20px 28px' }}>
-            <h2 className="sec-title">Settings & Parameters</h2>
-            <p className="sec-sub">System global variable toggles and configuration matrix container placeholder.</p>
-          </div>
+          <SettingsPage/>
         );
       default:
         return <DashboardHome setActiveTab={setActiveTab} tier={tier} setTier={setTier} />;

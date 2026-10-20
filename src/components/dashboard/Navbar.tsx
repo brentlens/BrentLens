@@ -69,13 +69,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         <button 
           className={`nav-link ${activeTab === 'scenario-planner' ? 'active' : ''}`}
-        //   onClick={() => setActiveTab('scenario-planner')}
+          onClick={() => setActiveTab('scenario-planner')}
         >
           Scenario Planner
         </button>
         <button 
           className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
-        //   onClick={() => setActiveTab('reports')}
+          onClick={() => setActiveTab('reports')}
         >
           Reports
         </button>
@@ -135,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </span>
 
         {/* Theme Switcher Button */}
-        <button className="icon-btn" onClick={toggleTheme} title="Toggle Theme">
+        {/* <button className="icon-btn" onClick={toggleTheme} title="Toggle Theme">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
             {theme === 'dark' ? (
               <path d="M8 1v1M8 14v1M1 8H0M15 8h1M2.64 2.64l.7.7M12.66 12.66l.7.7M2.64 13.36l.7-.7M12.66 3.34l.7-.7M11 8a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -143,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <path d="M12.3 10.5a5.5 5.5 0 11-6.8-6.8 4 4 0 006.8 6.8z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
             )}
           </svg>
-        </button>
+        </button> */}
 
         {/* Alert Trigger and Container Panel */}
         <div className="alert-wrap" ref={alertsRef}>

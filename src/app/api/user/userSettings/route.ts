@@ -37,13 +37,16 @@ export async function GET(request: Request) {
       .limit(1)
       .single();
 
+      console.log(dataBrent)
+
     if (dbErrorBrent) {
       return NextResponse.json(
         { message: `Database crash: ${dbErrorBrent.message}` },
         { status: 500 }
       );
     }
-    //   console.log("brent changes ------",dataBrent)
+    
+    // console.log("brent changes ------",dataBrent)
 
     if (dbError) {
       return NextResponse.json(
@@ -51,6 +54,7 @@ export async function GET(request: Request) {
         { status: 500 }
       );
     }
+      // console.log("brent changes33333 ------",dataBrent)
 
     const modData = {
       country: data.preference.country.value,

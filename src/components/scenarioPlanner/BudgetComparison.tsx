@@ -1,4 +1,54 @@
+import { useEffect, useState } from "react";
+
+interface BerntObj {
+  brentValues: any
+}
+
+interface BrentChanged {
+  monthlyCost: number;
+  extraAmt: number;
+  spendBracket: number;
+  yearlyCost: number;
+  profit: boolean;
+}
+
 export default function BudgetComparison() {
+
+  const [berentChanged, setBrentChanged] = useState<BrentChanged>();
+  const [brentPrice, setBrentPrice] = useState<number>(85)
+
+  const calculate = () => {
+    const brentObj = JSON.parse(localStorage.getItem("brentObj") || "null");
+
+    if (brentObj) {
+      const inputPrice = brentPrice;
+      const currPrice = brentObj.currentPrice;
+
+      // 21.9176% -> 21.9% -> 0.219
+      const diff =Math.round(((currPrice - inputPrice) / inputPrice) * 1000) / 1000;
+
+      const extraAmt = Math.round(brentObj.spend_bracket *diff *brentObj.pass_through_rate *brentObj.sensitivity_score);
+
+      const newMonthlyCost = Math.round(brentObj.spend_bracket + extraAmt);
+
+      const yearlyVariance = extraAmt * 12;
+
+      const monthlyReserve = extraAmt;
+
+      setBrentChanged({
+        monthlyCost: Math.abs(monthlyReserve),
+        extraAmt: Math.abs(extraAmt),
+        spendBracket: Math.abs(newMonthlyCost),
+        yearlyCost: Math.abs(yearlyVariance),
+        profit: inputPrice < currPrice ? false : true
+      });
+    }
+  };
+
+  useEffect(() => {
+    calculate()
+  }, [brentPrice])
+
   return (
     <div className="rounded-3xl border border-gray-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
@@ -17,29 +67,37 @@ export default function BudgetComparison() {
           <span>Your budget assumed Brent at</span>
           <input
             type="number"
-            defaultValue={85}
+            value={brentPrice}
             className="w-40 rounded-xl border border-gray-200 px-4 py-3 font-semibold"
+            onChange={(e) => setBrentPrice(Number(e.target.value))}
           />
           <span>/ BBL</span>
         </div>
         <div className="overflow-hidden rounded-2xl border border-gray-200">
           <TableRow
             label="Monthly fuel cost assumed"
-            value="€161,000"
+            value={` ${berentChanged?.profit ? '+' : '-'}${berentChanged?.spendBracket.toString() || '0'}`}
+            profit={berentChanged?.profit || false}
           />
           <TableRow
             label="Monthly fuel cost at your scenario"
-            value="€173,600"
-            badge="+€12,600"
+            value={ `${berentChanged?.profit ? '+' : '-'} ${berentChanged?.spendBracket.toString() || ''}`}
+            badge={` ${berentChanged?.profit ? '+' : '-'}${berentChanged?.extraAmt.toString() || ''}`}
+            profit={berentChanged?.profit || false}
+
           />
           <TableRow
             label="Annual budget variance"
-            value="+€151,200 / year"
-            badge="Significant overspend"
+            value={` ${berentChanged?.profit ? '+' : '-'}${berentChanged?.yearlyCost}  / year`}
+            badge={` ${berentChanged?.profit ? 'Savings' : 'Significant overspend'} `}
+            profit={berentChanged?.profit || false}
+
           />
           <TableRow
             label="Reserve required"
-            value="€3,150 / month"
+            value={` ${berentChanged?.profit ? '+' : '-'} ${berentChanged?.monthlyCost} / month`}
+            profit={berentChanged?.profit || false}
+
           />
         </div>
       </div>
@@ -50,10 +108,12 @@ export default function BudgetComparison() {
 function TableRow({
   label,
   value,
+  profit,
   badge,
 }: {
   label: string;
   value: string;
+  profit:boolean;
   badge?: string;
 }) {
   return (
@@ -65,12 +125,12 @@ function TableRow({
 
       <div className="flex items-center gap-3">
 
-        <span className="font-bold text-red-500">
+        <span className={`font-bold  ${profit ? 'text-green-500' : 'text-red-500'}  `}>
           {value}
         </span>
 
         {badge && (
-          <span className="rounded bg-red-100 px-2 py-1 text-xs font-semibold text-red-500">
+          <span className={`rounded px-2 py-1 text-xs font-semibold ${profit ? 'text-green-500  bg-green-100' : 'text-red-500  bg-red-100'}`}>
             {badge}
           </span>
         )}

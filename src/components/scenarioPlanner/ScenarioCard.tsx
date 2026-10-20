@@ -42,14 +42,28 @@ export default function ScenarioCard({
       <hr className="my-4 border-gray-300 " />
 
       <Metric title="Brent price" value={price} />
-      <Metric title="Your cost impact" value={impact} />
-      <Metric title="Budget revision" value={budget} />
+      <Metric title="Your cost impact" value={formatCurrency(impact)} />
+      <Metric title="Budget revision" value={formatCurrency(budget, false)} />
       <Metric title="Risk level" value={risk} />
       <Metric title="Action window" value={days} />
     </div>
   );
 }
+  const formatCurrency = (
+  val: string | number,
+  showSign: boolean = true
+) => {
+  // Convert string to number, defaulting to 0 if invalid or empty
+  const numericVal = typeof val === "number" ? val : parseFloat(val) || 0;
 
+  const sign = numericVal >= 0 ? "+" : "-";
+
+  const formatted = Math.abs(numericVal).toLocaleString("en-US");
+
+  return showSign
+    ? `${sign}$${formatted}`
+    : `$${formatted}`;
+};
 function Metric({
   title,
   value,

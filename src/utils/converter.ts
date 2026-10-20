@@ -1,5 +1,6 @@
 export const convertToDecimal = (val: string | number): string => {
-  return Number(val).toFixed(2);
+  // return Number(val).toFixed(1);
+  return Math.round(Number(val)).toString();
 };
 
 export const priceFormatter = (val:string ):string => {

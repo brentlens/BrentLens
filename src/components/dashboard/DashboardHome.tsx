@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 import { useEffect, useState } from 'react';
-import { countries } from "@/configs/countries";
 import { sectors } from "@/configs/sectors";
 import { ShockThresHolds } from "@/configs/shock_thresholds";
 import { ScenarioRules } from "@/configs/scenario_rules";
@@ -12,25 +11,16 @@ import LoaderOverlay from '../Loader';
 import { convertToDecimal, percentFormatter, priceFormatter } from '@/utils/converter';
 import ProcurementActionSignal from './ProcurementActionSignal';
 import ExposureProfile from './ExposureProfile';
-
-// 1. Defined the TypeScript interface matching the layout parameters
-interface DashboardHomeProps {
-  setActiveTab: (tab: any) => void;
-  tier: any;
-  setTier: (tier: any) => void;
-}
-
-interface RiskLevels {
-  shock: number,
-  risk: any,
-  riskLevel: string
-}
+import { COUNTRIES } from '@/configs/countries';
+import { BrentData, DashboardHomeProps, RiskBand, RiskLevels } from '@/types/dashboard';
+import { onboarding_mappings } from '@/configs/onboarding_mappings';
+import BrentForecastChart from './BrentForecastChart';
 
 
 // 2. Renamed the function to DashboardHome and destructuring the parameters
 export default function DashboardHome({ setActiveTab, tier, setTier }: DashboardHomeProps) {
 
-  const [brentData, setBrentData] = useState<any>({
+  const [brentData, setBrentData] = useState<BrentData>({
     pass_through_rate: 0,
     sensitivity_score: 0,
     spend_bracket: 0,
@@ -40,7 +30,10 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
     currentPrice: 0,
     formattedPrice: '',
     additionalCostToday: 0,
-    totalCalc: 0
+    totalCalc: 0,
+    days_remaining: 0,
+    latest_shock: null,
+    last_shock: null
   })
   const [brentChanges, setBrentChanges] = useState<any>()
   const [shockVal, setShockVal] = useState<RiskLevels>({
@@ -48,15 +41,22 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
     risk: null,
     riskLevel: ''
   })
-  const [regimeList,setRegimeList]=useState<any>();
-  const [scenariosCalc,setScenariosCalc] =useState({
-    base:'',
+  const [regimeList, setRegimeList] = useState<any>();
+  const [scenariosCalc, setScenariosCalc] = useState({
+    base: '',
+    basePrice: 0,
     bear: '',
-    bull: ''
+    bearPrice: 0,
+    bull: '',
+    bullPrice: 0
   })
   const [loading, SetLoading] = useState(true)
+  const [baselinePercent, setBaselinePercent] = useState<number>(0)
+  const [marginImpact, setMarginImpact] = useState<number>(0);
+
   const fetchLatestData = async () => {
-    const id = "dba654a4-bd49-4ce8-a3a4-9c995ff720cb";
+    // const id = "7f1a5995-9933-4114-8702-8f7c458b4f50";
+    const id = "8c1c4b55-e94b-490d-9bb8-12d4b0fe6e44"; 
 
     const response = await fetch(`/api/user/userSettings?id=${id}`, {
       method: "GET",
@@ -64,20 +64,22 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
 
     let data = await response.json();
     data = data.record
-    // console.log(data.brent30Days?.["30d"]?.percent);
-    // debugger
-
-    const countryConfig =
-      countries[data.country as keyof typeof countries] ?? countries.DEFAULT;
+    const countryConfig = COUNTRIES[data.country as keyof typeof COUNTRIES] ?? COUNTRIES.DEFAULT;
 
     const sectorConfig =
       sectors[data.sector as keyof typeof sectors] ?? sectors.logistics;
 
     const brent30Days = data.brent30Days?.["30d"]?.percent
     // - indicates saving and + indicates extra expense
-    const todaysCost = (data.brent30Days?.["24h"]?.percent / 100) * countryConfig.pass_through_rate * sectorConfig.sensitivity_normalised * data.spendBucket
-    const calcobj = (brent30Days / 100) * countryConfig.pass_through_rate * sectorConfig.sensitivity_normalised * data.spendBucket
-    setBrentData({
+    const todaysCost = (data.brent30Days?.["24h"]?.percent / 100) 
+                  * countryConfig.pass_through_rate 
+                  * sectorConfig.sensitivity_normalised 
+                  * data.spendBucket
+
+    // cost_impact
+    const calcobj = Math.round((brent30Days / 100) * countryConfig.pass_through_rate * sectorConfig.sensitivity_normalised * data.spendBucket)
+
+    let obj = {
       pass_through_rate: countryConfig.pass_through_rate,
       sensitivity_score: sectorConfig.sensitivity_normalised,
       spend_bracket: data.spendBucket,
@@ -87,15 +89,82 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
       currentPrice: data.currentPrice,
       formattedPrice: data.formattedPrice,
       additionalCostToday: todaysCost,
-      totalCalc: calcobj
-    });
+      totalCalc: calcobj,
+      days_remaining: 0,
+      latest_shock: null,
+      last_shock: null
+    }
+    setBrentData(obj);
+    localStorage.setItem('brentObj', JSON.stringify(obj))
     setBrentChanges(data.brent30Days)
 
     SetLoading(false)
-    shockCalculator(brent30Days, (countryConfig.lag_midpoint_days + sectorConfig.lag_adjustment_days)
-      , sectorConfig.sensitivity_score, countryConfig.pass_through_rate)
-    scenarioCalculator(brent30Days,sectorConfig.sensitivity_normalised,countryConfig.pass_through_rate,data.currentPrice,data.spendBucket)
-    
+    await shockCalculator(brent30Days, (countryConfig.lag_midpoint_days + sectorConfig.lag_adjustment_days)
+      , sectorConfig.sensitivity_score, countryConfig.pass_through_rate, calcobj,data.currentPrice,data.spendBucket)
+    // const scenarioPrices = await calculateScenarioPrices(data.currentPrice, brent30Days);
+
+
+    calculateBaseLine(calcobj, data.spendBucket)
+    calculateMarginImpact(calcobj, data.spendBucket)
+  };
+
+
+  const upsertImpactEvent = async (shock: number, totalCalc: number) => {
+    const user_id = "8c1c4b55-e94b-490d-9bb8-12d4b0fe6e44";
+
+    let payload = {
+      user_id: user_id,
+      new_cost_impact: totalCalc,
+      shock_index: shock
+    }
+    const response = await fetch('/api/impact', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    let data = await response.json();
+
+    let lastShockVal = getRiskBand(data.event.last_shock)
+    let latestShockVal = getRiskBand(data.event.latest_shock)
+
+
+    setBrentData((prev: any) => ({
+      ...prev,
+      days_remaining: data.event.days_remaining,
+      last_shock: lastShockVal,
+      latest_shock: latestShockVal,
+    }))
+
+    let obj = {
+      days_remaining: data.event.days_remaining,
+      last_shock: lastShockVal,
+      latest_shock: latestShockVal,
+    }
+
+    localStorage.setItem('shockObj', JSON.stringify(obj))
+  };
+
+  const getRiskBand = (latestShock: number): (RiskBand & { riskLevel: string }) | null => {
+    let riskBands = ShockThresHolds['risk_bands']
+    const entry = Object.entries(riskBands).find(
+      ([, band]) =>
+        latestShock >= band.min &&
+        latestShock <= band.max
+    );
+
+    if (!entry) {
+      return null;
+    }
+
+    const [riskLevel, riskData] = entry;
+
+    return {
+      riskLevel,
+      ...riskData
+    };
   };
 
   useEffect(() => {
@@ -110,7 +179,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
     },
     {
       title: "Margin Impact",
-      value: "-1.8%",
+      value: ` ${marginImpact > 0 ? '+' : '-'} ${marginImpact.toFixed(1)}%`,
       subtitle: "Based on mid spend",
     },
     {
@@ -128,16 +197,16 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
   const scenarios = [
     {
       name: "Bear",
-      price: "$84",
-      probability: regimeList?.bear+ '%',
-      impact: "-€2,100",
+      price: `$${scenariosCalc.bearPrice}`,
+      probability: regimeList?.bear + '%',
+      impact: `$${scenariosCalc.bear}`,
       bg: "bg-red-50",
       border: "border-red-200",
       color: "text-red-500",
     },
     {
       name: "Base",
-      price: `$${brentData.currentPrice + (1 + brentData.brent_30_days_move)}`,
+      price: `$${scenariosCalc.basePrice}`,
       probability: regimeList?.base + '%',
       impact: `$${scenariosCalc.base}`,
       bg: "bg-violet-50",
@@ -146,24 +215,31 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
     },
     {
       name: "Bull",
-      price: "$98",
+      price: `$${scenariosCalc.bullPrice}`,
       probability: regimeList?.bull + '%',
-      impact: "+€24,200",
+      impact: `$${scenariosCalc.bull}`,
       bg: "bg-emerald-50",
       border: "border-emerald-200",
       color: "text-emerald-600",
     },
   ];
 
-  const shockCalculator = (brent30Days: number, impackLag: number, sensitivity_score: number, pass_through_rate: number) => {
+  const shockCalculator = async (brent30Days: number, impactLag: number, sensitivity_score: number, pass_through_rate: number, cost_impact: number,currentPrice:number
+    , spendBucket:number
+  ) => {
     let shock = ShockThresHolds['formula_weights']
-    let Momentum_Score = Math.min(100, brent30Days * 10) //= 41
-    let InverseLag_Score = Math.min(0, 100 - (impackLag * 5))
+    const Momentum_Score = Math.min(100, Math.abs(brent30Days) * 10);
+    const InverseLag_Score = Math.max(0, 100 - (impactLag * 5));
+    const passThroughScore = pass_through_rate * 100;
 
-    let cal = (Momentum_Score * shock.brent_momentum) +
+    const cal = (Momentum_Score * shock.brent_momentum) +
       (sensitivity_score * shock.sector_sensitivity) +
-      (pass_through_rate * shock.pass_through_rate) +
-      (InverseLag_Score * shock.inverse_lag)
+      (passThroughScore * shock.pass_through_rate) +
+      (InverseLag_Score * shock.inverse_lag);
+
+    const finalShock = Math.round(cal);
+    
+
     let riskData = {}
     let risk = ''
 
@@ -182,28 +258,21 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
 
     }
     setShockVal({
-      shock: Math.ceil(cal),
+      shock: finalShock,
       riskLevel: risk,
       risk: riskData
     })
 
-    calculateProbability(Math.ceil(cal),brent30Days)
+    calculateProbability(finalShock, currentPrice, brent30Days,spendBucket)
+    await upsertImpactEvent(finalShock, cost_impact)
   }
 
-  const scenarioCalculator = (brent30Days: number, sensitivity_score: number, pass_through_rate: number, currentPrice: number, spend_bracket: number): number => {
-    let scenarioPrice = currentPrice + (1 + brent30Days)
-    let scenarioPercent = (scenarioPrice - currentPrice) / currentPrice
-    let impact = spend_bracket * (scenarioPercent * 100) * pass_through_rate * sensitivity_score
-    setScenariosCalc({
-      base: Math.ceil(impact).toString(),
-      bull: '',
-      bear: ''
-    })
-    return impact;
-  }
 
   type RegimeName = keyof typeof ScenarioRules.market_regimes;
-  const calculateProbability = (shock: number, brent30Days: number) => {
+
+  const calculateProbability = (shock: number, currentPrice: number, brent30Days: number
+    , spendBucket:number
+  ) => {
     let regimeName: RegimeName;
 
     if (brent30Days > 0.05 && shock > 70) {
@@ -222,11 +291,83 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
 
     setRegimeList({
       regime: regimeName,
-      bear: Math.ceil(regime.bear_probability*100),
-      base: Math.ceil(regime.base_probability*100),
-      bull: Math.ceil(regime.bull_probability*100),
+      bear: Math.round(regime.bear_probability * 100),
+      base: Math.round(regime.base_probability * 100),
+      bull: Math.round(regime.bull_probability * 100),
     });
+
+    const basePrice = currentPrice * (1 + brent30Days / 100);
+    const baseChange = spendBucket * (Math.abs(basePrice-100)/100)  
+
+
+    const bearMove = basePrice * regime.bear_probability;
+    const bullMove = basePrice * regime.bull_probability;
+
+    const bearPrice = basePrice - bearMove;
+    const bullPrice = basePrice + bullMove;
+
+    const bearChange = spendBucket * ((basePrice * regime.bear_probability)/100);
+    const bullChange = spendBucket * ((basePrice * regime.bull_probability)/100);
+    
+    setScenariosCalc({
+      base: Math.round(baseChange).toString(),
+      bull: convertToDecimal(bullChange),
+      bear: convertToDecimal(bearChange),
+      bullPrice: Number(convertToDecimal(bullPrice)),
+      basePrice: Number(convertToDecimal(basePrice)),
+      bearPrice: Number(convertToDecimal(bearPrice))
+    });
+
   };
+
+  const calculateBaseLine = (cost_impact: number, budget: number) => {
+    let cal = (cost_impact / budget) * 100
+    setBaselinePercent(cal)
+  }
+
+  const getLastMonthName = (): string => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - 1);
+
+    let name = date.toLocaleString("en-US", {
+      month: "long",
+    });
+    return name + " baseline"
+  };
+
+
+  const calculateScenarioPrices = async (
+    currentPrice: number,
+    brent30Days: number
+  ) => {
+    const response = await fetch("/api/volatility_30d");
+    const data = await response.json();
+    const prices = ScenarioRules["price_targets"];
+    const base = currentPrice * (1 + brent30Days / 100);
+    // const bull = base + data.volatility * prices.bull_multiplier;
+    // const bear = base - data.volatility * prices.bear_multiplier;
+
+    const volatilityMove = currentPrice * (data.volatility / 100);
+    const bull = base + volatilityMove * prices.bull_multiplier;
+    const bear = base - volatilityMove * prices.bear_multiplier;
+
+    return {
+      base,
+      bull,
+      bear,
+    };
+  };
+
+  const calculateMarginImpact = (cost_impact: number, monthlySpend: number,) => {
+    let fuel_exposure = onboarding_mappings['fuel_exposure'];
+    let expoMultiplier = fuel_exposure['low']['multiplier']
+    const exposedSpend = monthlySpend * expoMultiplier;
+    
+    // const impact = (cost_impact / exposedSpend) * 100;
+    let impact = cost_impact / (monthlySpend / expoMultiplier) * 100
+    setMarginImpact(impact)
+  }
+
 
   return (
     <>
@@ -259,10 +400,10 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                     <div className="mt-1 flex items-center gap-2">
                       <TrendingUp className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-bold text-red-500">
-                        {priceFormatter(brentChanges?.['24h']?.amount.toString())}
+                        ${(brentChanges?.['24h']?.amount.toString())}
                       </span>
                       <span className="text-lg font-semibold text-red-500">
-                        {percentFormatter(brentChanges?.['24h']?.percent.toString())}
+                        {brentChanges?.['24h']?.percent.toString()}%
                       </span>
                     </div>
 
@@ -298,7 +439,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                     <div className="mt-1 flex items-center gap-2">
                       <Clock3 className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-bold text-red-500">
-                        10 days → 9 days
+                        {brentData.days_remaining + 1} days → {brentData.days_remaining} days
                       </span>
                     </div>
 
@@ -316,7 +457,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                     <div className="mt-1 flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-bold text-red-500">
-                        Medium → HIGH
+                        {brentData.last_shock?.riskLevel ?? 'N/A'} → {brentData.latest_shock?.riskLevel ?? 'N/A'}
                       </span>
                     </div>
 
@@ -515,13 +656,15 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                             Expected Fuel Cost Increase
                           </p>
                           <div className="mt-3 inline-flex border border-red-400 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-500">
-                            ● Budget Risk • HIGH
+                            ● Budget Risk • {brentData.latest_shock?.riskLevel}
                           </div>
                           <h1 className="mt-6 text-7xl font-bold text-violet-600">
                             +€ {convertToDecimal(brentData.totalCalc)}
                           </h1>
                           <p className="mt-2 text-xl font-semibold text-red-500">
-                            +5.2% above April baseline
+                            {percentFormatter(baselinePercent.toString())}
+                            {baselinePercent > 0 ? ' above ' : ' below '}
+                            {getLastMonthName()}
                           </p>
 
                         </div>
@@ -551,7 +694,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                               Revised Forecast
                             </p>
                             <h2 className="text-xl font-bold text-red-500">
-                              € {Math.ceil(Number(brentData.spend_bracket) + Number(convertToDecimal(brentData.totalCalc)))}
+                              € {Math.round(Number(brentData.spend_bracket) + Number(convertToDecimal(brentData.totalCalc)))}
                             </h2>
                           </div>
                         </div>
@@ -586,13 +729,14 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                         </button>
                       </div>
                     </div>
-                <ProcurementActionSignal/>
-              <ExposureProfile fuel_sensitivity={(brentData.sensitivity_score * 100) /100}
-              impact_lag={brentData.impactLag}
-              pass_through_rate={(brentData.pass_through_rate * 100)}
-              risk_category={shockVal.riskLevel}
-              shock_index={shockVal.shock}
-              />
+                    <BrentForecastChart />
+                    <ProcurementActionSignal />
+                    <ExposureProfile fuel_sensitivity={(brentData.sensitivity_score * 100) / 100}
+                      impact_lag={brentData.impactLag}
+                      pass_through_rate={(brentData.pass_through_rate * 100)}
+                      risk_category={shockVal.riskLevel}
+                      shock_index={shockVal.shock}
+                    />
 
                   </div>
                   {/* RIGHT */}
@@ -621,7 +765,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                         </div>
 
                         <p className="mt-2 text-xs text-slate-500">
-                          30-day Brent forecast · Range $87–$96
+                          30-day Brent forecast
                         </p>
 
                         <div className="mt-6 flex justify-between text-xs font-semibold">
@@ -631,8 +775,8 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
 
                         <div className="mt-2 h-1 rounded-full bg-slate-200">
                           <div className="h-full w-[72%] rounded-full bg-gradient-to-r
-        from-violet-600
-        to-sky-500" />
+                              from-violet-600
+                              to-sky-500" />
                         </div>
 
                         <div className="mt-5 space-y-3">
@@ -738,7 +882,7 @@ export default function DashboardHome({ setActiveTab, tier, setTier }: Dashboard
                 </div>
               </div>
 
-              
+
             </>
             : LoaderOverlay()
         }
